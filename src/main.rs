@@ -51,12 +51,17 @@ impl EventHandler for Game {
         let (w_size, h_size) = (w / 8.0, h / 8.0);
         let (col, row) = ((x / w_size).floor() as u8, (y / h_size).floor() as u8);
         // TODO: Sanity check.
+        // TODO: Refactor out movement code.
         match self.board.0[row as usize][col as usize] {
             None => {
                 if let Some((x, y)) = self.selected_piece {
                     if self.moves().contains(&(col, row)) {
-                        if let Some(piece) = self.board.0[y as usize][x as usize].take() {
-                            self.board.0[row as usize][col as usize] = Some(piece);
+                        if let Some(Piece {unit, player, moved}) = self.board.0[y as usize][x as usize].take() {
+                            self.board.0[row as usize][col as usize] = Some(Piece {
+                                unit: unit,
+                                player: player,
+                                moved: moved + 1,
+                            });
                         }
                     }
                 }
@@ -65,8 +70,12 @@ impl EventHandler for Game {
                 if self.contains_enemy((col, row)) {
                     if let Some((x, y)) = self.selected_piece {
                         if self.moves().contains(&(col, row)) {
-                            if let Some(piece) = self.board.0[y as usize][x as usize].take() {
-                                self.board.0[row as usize][col as usize] = Some(piece);
+                            if let Some(Piece {unit, player, moved}) = self.board.0[y as usize][x as usize].take() {
+                                self.board.0[row as usize][col as usize] = Some(Piece {
+                                    unit: unit,
+                                    player: player,
+                                    moved: moved + 1,
+                                });
                             }
                         }
                     }
@@ -105,7 +114,7 @@ impl EventHandler for Game {
         // Draw pieces.
         for (y, row) in self.board.0.iter().enumerate() {
             for (x, cell) in row.iter().enumerate() {
-                if let Some(Piece { player, unit }) = cell {
+                if let Some(Piece { player, unit, .. }) = cell {
                     let color = match player {
                         Player::White => graphics::WHITE,
                         Player::Black => graphics::BLACK,
@@ -176,6 +185,8 @@ pub enum Player {
 pub struct Piece {
     pub unit: Unit,
     pub player: Player,
+    // Track number of times this piece has been moved.
+    pub moved: u32,
 }
 
 /// Board contains the location information of each piece.
@@ -204,7 +215,7 @@ impl Game {
         use Unit::*;
         match self.selected_piece {
             Some((x, y)) => match &self.board.0[y as usize][x as usize] {
-                Some(Piece { unit, player }) => match unit {
+                Some(Piece { unit, player, moved }) => match unit {
                     // Pawn can move in the direction of the player by 1 square.
                     // For the first move, a pawn can move up to 2 squares.
                     // Pawns can only attack diagonally in the direction of the
@@ -228,6 +239,9 @@ impl Game {
                                 }
                                 if self.board.0[y as usize + 1][x as usize].is_none() {
                                     moves.push((x, y + 1));
+                                    if *moved == 0 {
+                                        moves.push((x, y + 2));
+                                    }
                                 }
                             }
                             Player::Black => {
@@ -240,6 +254,9 @@ impl Game {
                                 }
                                 if self.board.0[y as usize - 1][x as usize].is_none() {
                                     moves.push((x, y - 1));
+                                    if *moved == 0 {
+                                        moves.push((x, y - 2));
+                                    }
                                 }
                             }
                         };
@@ -296,68 +313,84 @@ impl Board {
                 Some(Piece {
                     unit: Rook,
                     player: White,
+                    moved: 0,
                 }),
                 Some(Piece {
                     unit: Knight,
                     player: White,
+                    moved: 0,
                 }),
                 Some(Piece {
                     unit: Bishop,
                     player: White,
+                    moved: 0,
                 }),
                 Some(Piece {
                     unit: Queen,
                     player: White,
+                    moved: 0,
                 }),
                 Some(Piece {
                     unit: King,
                     player: White,
+                    moved: 0,
                 }),
                 Some(Piece {
                     unit: Bishop,
                     player: White,
+                    moved: 0,
                 }),
                 Some(Piece {
                     unit: Knight,
                     player: White,
+                    moved: 0,
                 }),
                 Some(Piece {
                     unit: Rook,
                     player: White,
+                    moved: 0,
                 }),
             ],
             [
                 Some(Piece {
                     unit: Pawn,
                     player: White,
+                    moved: 0,
                 }),
                 Some(Piece {
                     unit: Pawn,
                     player: White,
+                    moved: 0,
                 }),
                 Some(Piece {
                     unit: Pawn,
                     player: White,
+                    moved: 0,
                 }),
                 Some(Piece {
                     unit: Pawn,
                     player: White,
+                    moved: 0,
                 }),
                 Some(Piece {
                     unit: Pawn,
                     player: White,
+                    moved: 0,
                 }),
                 Some(Piece {
                     unit: Pawn,
                     player: White,
+                    moved: 0,
                 }),
                 Some(Piece {
                     unit: Pawn,
                     player: White,
+                    moved: 0,
                 }),
                 Some(Piece {
                     unit: Pawn,
                     player: White,
+                    moved: 0,
                 }),
             ],
             [None, None, None, None, None, None, None, None],
@@ -368,68 +401,84 @@ impl Board {
                 Some(Piece {
                     unit: Pawn,
                     player: Black,
+                    moved: 0,
                 }),
                 Some(Piece {
                     unit: Pawn,
                     player: Black,
+                    moved: 0,
                 }),
                 Some(Piece {
                     unit: Pawn,
                     player: Black,
+                    moved: 0,
                 }),
                 Some(Piece {
                     unit: Pawn,
                     player: Black,
+                    moved: 0,
                 }),
                 Some(Piece {
                     unit: Pawn,
                     player: Black,
+                    moved: 0,
                 }),
                 Some(Piece {
                     unit: Pawn,
                     player: Black,
+                    moved: 0,
                 }),
                 Some(Piece {
                     unit: Pawn,
                     player: Black,
+                    moved: 0,
                 }),
                 Some(Piece {
                     unit: Pawn,
                     player: Black,
+                    moved: 0,
                 }),
             ],
             [
                 Some(Piece {
                     unit: Rook,
                     player: Black,
+                    moved: 0,
                 }),
                 Some(Piece {
                     unit: Knight,
                     player: Black,
+                    moved: 0,
                 }),
                 Some(Piece {
                     unit: Bishop,
                     player: Black,
+                    moved: 0,
                 }),
                 Some(Piece {
                     unit: Queen,
                     player: Black,
+                    moved: 0,
                 }),
                 Some(Piece {
                     unit: King,
                     player: Black,
+                    moved: 0,
                 }),
                 Some(Piece {
                     unit: Bishop,
                     player: Black,
+                    moved: 0,
                 }),
                 Some(Piece {
                     unit: Knight,
                     player: Black,
+                    moved: 0,
                 }),
                 Some(Piece {
                     unit: Rook,
                     player: Black,
+                    moved: 0,
                 }),
             ],
         ])
