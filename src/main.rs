@@ -47,9 +47,6 @@ impl EventHandler for Game {
     }
 
     fn mouse_button_up_event(&mut self, _ctx: &mut Context, _b: MouseButton, x: f32, y: f32) {
-        // map x,y to cell.
-        // break into 8 rows and columns.
-        // test for which cell we are in.
         let (w, h) = (800.0, 600.0);
         let (w_size, h_size) = (w / 8.0, h / 8.0);
         let (col, row) = ((x / w_size).floor() as u8, (y / h_size).floor() as u8);
@@ -57,14 +54,6 @@ impl EventHandler for Game {
         match self.board.0[row as usize][col as usize] {
             None => {
                 if let Some((x, y)) = self.selected_piece {
-                    println!(
-                        "(x, y) = ({}, {}), (col, row) = ({}, {}), moves = {:?}",
-                        x,
-                        y,
-                        col,
-                        row,
-                        self.moves()
-                    );
                     if self.moves().contains(&(col, row)) {
                         if let Some(piece) = self.board.0[y as usize][x as usize].take() {
                             self.board.0[row as usize][col as usize] = Some(piece);
@@ -73,7 +62,17 @@ impl EventHandler for Game {
                 }
             }
             Some(_) => {
-                self.selected_piece = Some((col as u8, row as u8));
+                if self.contains_enemy((col, row)) {
+                    if let Some((x, y)) = self.selected_piece {
+                        if self.moves().contains(&(col, row)) {
+                            if let Some(piece) = self.board.0[y as usize][x as usize].take() {
+                                self.board.0[row as usize][col as usize] = Some(piece);
+                            }
+                        }
+                    }
+                } else {
+                    self.selected_piece = Some((col as u8, row as u8));
+                }
             }
         };
     }
@@ -166,29 +165,6 @@ pub enum Unit {
     King,
 }
 
-impl Unit {
-    /// Calculate valid moves for the given unit at the given location.
-    /// Assumes standard chess rules.
-    pub fn moves(&self, location: (u8, u8)) -> Vec<(u8, u8)> {
-        use Unit::*;
-        let (x, y) = location;
-        match self {
-            Pawn => vec![(x, y + 1)],
-            King => vec![
-                (x + 1, y + 1),
-                (x - 1, y - 1),
-                (x + 1, y - 1),
-                (x - 1, y + 1),
-                (x + 1, y),
-                (x - 1, y),
-                (x, y + 1),
-                (x, y - 1),
-            ],
-            _ => vec![],
-        }
-    }
-}
-
 /// Player denotes the two unique players that can own units.
 #[derive(Eq, PartialEq)]
 pub enum Player {
@@ -233,7 +209,42 @@ impl Game {
                     // For the first move, a pawn can move up to 2 squares.
                     // Pawns can only attack diagonally in the direction of the
                     // player.
-                    Pawn => vec![(x, y - 1)],
+                    // Cannot attack straight ahead.
+                    // TODO: Move up to 2 squares on first move.
+                    //  - Add `has_moved` state to each piece entity, or
+                    //  - Compare current position with original position to
+                    //      detect if this is the first move.
+                    Pawn => {
+                        let mut moves = vec![];
+                        match player {
+                            // Clean: The only difference between these two
+                            // blocks is the direction.
+                            Player::White => {
+                                if self.contains_enemy((x - 1, y + 1)) {
+                                    moves.push((x - 1, y + 1));
+                                }
+                                if self.contains_enemy((x + 1, y + 1)) {
+                                    moves.push((x + 1, y + 1));
+                                }
+                                if self.board.0[y as usize + 1][x as usize].is_none() {
+                                    moves.push((x, y + 1));
+                                }
+                            }
+                            Player::Black => {
+                                if self.contains_enemy((x - 1, y - 1)) {
+                                    moves.push((x - 1, y - 1));
+                                }
+                                moves.push((x - 1, y - 1));
+                                if self.contains_enemy((x + 1, y - 1)) {
+                                    moves.push((x + 1, y - 1));
+                                }
+                                if self.board.0[y as usize - 1][x as usize].is_none() {
+                                    moves.push((x, y - 1));
+                                }
+                            }
+                        };
+                        moves
+                    }
                     // King can move to any adjacent cell that isn't occupied by
                     // a piece of the same player.
                     King => vec![
@@ -263,6 +274,15 @@ impl Game {
                 None => vec![],
             },
             None => vec![],
+        }
+    }
+    /// Contains enemy if the specified position is occupied by a piece owned
+    /// by the other player.
+    pub fn contains_enemy(&self, pos: (u8, u8)) -> bool {
+        let (x, y) = pos;
+        match &self.board.0[y as usize][x as usize] {
+            Some(Piece { player, .. }) => *player != self.turn,
+            _ => false,
         }
     }
 }
