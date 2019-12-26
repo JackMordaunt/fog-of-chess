@@ -67,6 +67,10 @@ impl EventHandler for Game {
                                 player: player,
                                 moved: moved + 1,
                             });
+                            self.turn = match self.turn {
+                                Player::Black => Player::White,
+                                Player::White => Player::Black,
+                            };
                         }
                     }
                 }
@@ -86,6 +90,10 @@ impl EventHandler for Game {
                                     player: player,
                                     moved: moved + 1,
                                 });
+                                self.turn = match self.turn {
+                                    Player::Black => Player::White,
+                                    Player::White => Player::Black,
+                                };
                             }
                         }
                     }
@@ -323,7 +331,6 @@ impl Game {
                         (x, y + 1),
                         (x, y - 1),
                     ],
-                    _ => vec![],
                 },
                 None => vec![],
             },
