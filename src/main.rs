@@ -281,10 +281,8 @@ impl Game {
                         (x - 1, y + 2),
                         (x + 1, y - 2),
                         (x - 1, y - 2),
-                    ]
-                    .into_iter()
-                    .filter(|(x, y)| self.contains_ally((*x, *y)))
-                    .collect(),
+                    ],
+                    Rook => vec![],
                     // King can move to any adjacent cell that isn't occupied by
                     // a piece of the same player.
                     King => vec![
@@ -296,16 +294,16 @@ impl Game {
                         (x - 1, y),
                         (x, y + 1),
                         (x, y - 1),
-                    ]
-                    .into_iter()
-                    .filter(|(x, y)| self.contains_ally((*x, *y)))
-                    .collect(),
+                    ],
                     _ => vec![],
                 },
                 None => vec![],
             },
             None => vec![],
         }
+        .into_iter()
+        .filter(|(x, y)| self.contains_ally((*x, *y)))
+        .collect()
     }
     /// Contains enemy if the specified position is occupied by a piece owned
     /// by the other player.
