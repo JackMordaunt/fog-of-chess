@@ -282,7 +282,13 @@ impl Game {
                         (x + 1, y - 2),
                         (x - 1, y - 2),
                     ],
-                    Rook => vec![],
+                    Rook => vec![]
+                        .into_iter()
+                        .chain((1..8).map(|ii| (x + ii, y)))
+                        .chain((1..8).map(|ii| (x - ii, y)))
+                        .chain((1..8).map(|ii| (x, y + ii)))
+                        .chain((1..8).map(|ii| (x, y - ii)))
+                        .collect(),
                     // King can move to any adjacent cell that isn't occupied by
                     // a piece of the same player.
                     King => vec![
