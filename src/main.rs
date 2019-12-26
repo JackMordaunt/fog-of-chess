@@ -235,10 +235,6 @@ impl Game {
                     // Pawns can only attack diagonally in the direction of the
                     // player.
                     // Cannot attack straight ahead.
-                    // TODO: Move up to 2 squares on first move.
-                    //  - Add `has_moved` state to each piece entity, or
-                    //  - Compare current position with original position to
-                    //      detect if this is the first move.
                     Pawn => {
                         let mut moves = vec![];
                         match player {
