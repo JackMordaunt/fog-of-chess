@@ -88,7 +88,6 @@ impl EventHandler for Game {
                                 moved,
                             }) = self.board.0[y as usize][x as usize].take()
                             {
-                                println!("{:?} {:?}", unit, player);
                                 self.board.0[row as usize][col as usize] = Some(Piece {
                                     unit: unit,
                                     player: player,
@@ -343,7 +342,7 @@ impl Game {
             None => vec![],
         }
         .into_iter()
-        .filter(|(x, y)| self.contains_ally((*x, *y)))
+        .filter(|(x, y)| !self.contains_ally((*x, *y)))
         .collect()
     }
     /// Contains enemy if the specified position is occupied by a piece owned
@@ -366,7 +365,7 @@ impl Game {
         if x > -1 && y > -1 && x - 1 < 7 && y - 1 < 7 {
             match &self.board.0[y as usize][x as usize] {
                 Some(Piece { player, .. }) => *player == self.turn,
-                None => true,
+                None => false,
             }
         } else {
             false
