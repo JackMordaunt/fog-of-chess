@@ -49,14 +49,19 @@ impl EventHandler for Game {
     fn mouse_button_up_event(&mut self, _ctx: &mut Context, _b: MouseButton, x: f32, y: f32) {
         let (w, h) = (800.0, 600.0);
         let (w_size, h_size) = (w / 8.0, h / 8.0);
-        let (col, row) = ((x / w_size).floor() as u8, (y / h_size).floor() as u8);
+        let (col, row) = ((x / w_size).floor() as i32, (y / h_size).floor() as i32);
         // TODO: Sanity check.
         // TODO: Refactor out movement code.
         match self.board.0[row as usize][col as usize] {
             None => {
                 if let Some((x, y)) = self.selected_piece {
                     if self.moves().contains(&(col, row)) {
-                        if let Some(Piece {unit, player, moved}) = self.board.0[y as usize][x as usize].take() {
+                        if let Some(Piece {
+                            unit,
+                            player,
+                            moved,
+                        }) = self.board.0[y as usize][x as usize].take()
+                        {
                             self.board.0[row as usize][col as usize] = Some(Piece {
                                 unit: unit,
                                 player: player,
@@ -70,7 +75,12 @@ impl EventHandler for Game {
                 if self.contains_enemy((col, row)) {
                     if let Some((x, y)) = self.selected_piece {
                         if self.moves().contains(&(col, row)) {
-                            if let Some(Piece {unit, player, moved}) = self.board.0[y as usize][x as usize].take() {
+                            if let Some(Piece {
+                                unit,
+                                player,
+                                moved,
+                            }) = self.board.0[y as usize][x as usize].take()
+                            {
                                 self.board.0[row as usize][col as usize] = Some(Piece {
                                     unit: unit,
                                     player: player,
@@ -80,7 +90,7 @@ impl EventHandler for Game {
                         }
                     }
                 } else {
-                    self.selected_piece = Some((col as u8, row as u8));
+                    self.selected_piece = Some((col as i32, row as i32));
                 }
             }
         };
@@ -197,7 +207,7 @@ pub struct Board([[Option<Piece>; 8]; 8]);
 pub struct Game {
     pub board: Board,
     pub turn: Player,
-    pub selected_piece: Option<(u8, u8)>,
+    pub selected_piece: Option<(i32, i32)>,
 }
 
 impl Game {
@@ -211,11 +221,15 @@ impl Game {
     }
     /// Moves calculates all valid moves for the currently selected piece.
     // TODO: Finish movement logic.
-    pub fn moves(&self) -> Vec<(u8, u8)> {
+    pub fn moves(&self) -> Vec<(i32, i32)> {
         use Unit::*;
         match self.selected_piece {
             Some((x, y)) => match &self.board.0[y as usize][x as usize] {
-                Some(Piece { unit, player, moved }) => match unit {
+                Some(Piece {
+                    unit,
+                    player,
+                    moved,
+                }) => match unit {
                     // Pawn can move in the direction of the player by 1 square.
                     // For the first move, a pawn can move up to 2 squares.
                     // Pawns can only attack diagonally in the direction of the
@@ -262,6 +276,19 @@ impl Game {
                         };
                         moves
                     }
+                    Knight => vec![
+                        (x + 2, y - 1),
+                        (x + 2, y + 1),
+                        (x - 2, y - 1),
+                        (x - 2, y + 1),
+                        (x + 1, y + 2),
+                        (x - 1, y + 2),
+                        (x + 1, y - 2),
+                        (x - 1, y - 2),
+                    ]
+                    .into_iter()
+                    .filter(|(x, y)| self.contains_ally((*x, *y)))
+                    .collect(),
                     // King can move to any adjacent cell that isn't occupied by
                     // a piece of the same player.
                     King => vec![
@@ -275,16 +302,7 @@ impl Game {
                         (x, y - 1),
                     ]
                     .into_iter()
-                    .filter(|(x, y)| {
-                        if x - 1 < 7 && y - 1 < 7 {
-                            match &self.board.0[*y as usize][*x as usize] {
-                                Some(Piece { player: p, .. }) => player != p,
-                                None => true,
-                            }
-                        } else {
-                            false
-                        }
-                    })
+                    .filter(|(x, y)| self.contains_ally((*x, *y)))
                     .collect(),
                     _ => vec![],
                 },
@@ -295,11 +313,28 @@ impl Game {
     }
     /// Contains enemy if the specified position is occupied by a piece owned
     /// by the other player.
-    pub fn contains_enemy(&self, pos: (u8, u8)) -> bool {
+    pub fn contains_enemy(&self, pos: (i32, i32)) -> bool {
         let (x, y) = pos;
-        match &self.board.0[y as usize][x as usize] {
-            Some(Piece { player, .. }) => *player != self.turn,
-            _ => false,
+        if x > -1 && y > -1 && x - 1 < 7 && y - 1 < 7 {
+            match &self.board.0[y as usize][x as usize] {
+                Some(Piece { player, .. }) => *player != self.turn,
+                _ => false,
+            }
+        } else {
+            false
+        }
+    }
+    /// Contains ally if the specified position is occupied by a piece owned by
+    /// the currently player.
+    pub fn contains_ally(&self, pos: (i32, i32)) -> bool {
+        let (x, y) = pos;
+        if x > -1 && y > -1 && x - 1 < 7 && y - 1 < 7 {
+            match &self.board.0[y as usize][x as usize] {
+                Some(Piece { player, .. }) => *player == self.turn,
+                None => true,
+            }
+        } else {
+            false
         }
     }
 }
