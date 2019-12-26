@@ -272,6 +272,7 @@ impl Game {
                         };
                         moves
                     }
+                    // Knight moves in an L shape: two out, one across.
                     Knight => vec![
                         (x + 2, y - 1),
                         (x + 2, y + 1),
@@ -282,6 +283,7 @@ impl Game {
                         (x + 1, y - 2),
                         (x - 1, y - 2),
                     ],
+                    // Rook moves in all non diagonal directions.
                     Rook => vec![]
                         .into_iter()
                         .chain((1..8).map(|ii| (x + ii, y)))
@@ -289,6 +291,7 @@ impl Game {
                         .chain((1..8).map(|ii| (x, y + ii)))
                         .chain((1..8).map(|ii| (x, y - ii)))
                         .collect(),
+                    Bishop => vec![],
                     // King can move to any adjacent cell that isn't occupied by
                     // a piece of the same player.
                     King => vec![
