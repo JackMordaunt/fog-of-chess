@@ -52,7 +52,7 @@ impl EventHandler for Game {
         let (col, row) = ((x / w_size).floor() as i32, (y / h_size).floor() as i32);
         // TODO: Sanity check.
         // TODO: Refactor out movement code.
-        match self.board.0[row as usize][col as usize] {
+        match &self.board.0[row as usize][col as usize] {
             None => {
                 if let Some((x, y)) = self.selected_piece {
                     if self.moves().contains(&(col, row)) {
@@ -71,12 +71,15 @@ impl EventHandler for Game {
                                 Player::Black => Player::White,
                                 Player::White => Player::Black,
                             };
+                            self.selected_piece = None;
                         }
                     }
                 }
             }
-            Some(_) => {
-                if self.contains_enemy((col, row)) {
+            Some(Piece { player, .. }) => {
+                // We want to move to a location occupied by an enemy piece.
+                // Therefore this move is an "attack move".
+                if *player != self.turn {
                     if let Some((x, y)) = self.selected_piece {
                         if self.moves().contains(&(col, row)) {
                             if let Some(Piece {
@@ -85,6 +88,7 @@ impl EventHandler for Game {
                                 moved,
                             }) = self.board.0[y as usize][x as usize].take()
                             {
+                                println!("{:?} {:?}", unit, player);
                                 self.board.0[row as usize][col as usize] = Some(Piece {
                                     unit: unit,
                                     player: player,
@@ -94,6 +98,7 @@ impl EventHandler for Game {
                                     Player::Black => Player::White,
                                     Player::White => Player::Black,
                                 };
+                                self.selected_piece = None;
                             }
                         }
                     }
@@ -183,6 +188,7 @@ impl EventHandler for Game {
 }
 
 /// Unique chess units.
+#[derive(Debug)]
 pub enum Unit {
     Pawn,
     Rook,
@@ -193,13 +199,14 @@ pub enum Unit {
 }
 
 /// Player denotes the two unique players that can own units.
-#[derive(Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum Player {
     White,
     Black,
 }
 
 /// Piece is a Unit-Player pair that represents a piece on the board.
+#[derive(Debug)]
 pub struct Piece {
     pub unit: Unit,
     pub player: Player,
@@ -266,7 +273,6 @@ impl Game {
                                 if self.contains_enemy((x - 1, y - 1)) {
                                     moves.push((x - 1, y - 1));
                                 }
-                                moves.push((x - 1, y - 1));
                                 if self.contains_enemy((x + 1, y - 1)) {
                                     moves.push((x + 1, y - 1));
                                 }
