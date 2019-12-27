@@ -29,6 +29,20 @@ const PURE_APPLE: Color = Color {
     a: 1.0,
 };
 
+const SOARING_EAGLE: Color = Color {
+    r: 149.0 / 256.0,
+    g: 175.0 / 256.0,
+    b: 192.0 / 256.0,
+    a: 1.0,
+};
+
+const WIZARD_GREY: Color = Color {
+    r: 83.0 / 256.0,
+    g: 92.0 / 256.0,
+    b: 104.0 / 256.0,
+    a: 1.0,
+};
+
 fn main() {
     let (mut ctx, mut event_loop) = ContextBuilder::new("Fog of War", "Jack Mordaunt")
         .window_mode(WindowMode::default().dimensions(800.0, 600.0))
@@ -109,7 +123,7 @@ impl EventHandler for Game {
     }
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
-        graphics::clear(ctx, DEEP_COVE);
+        graphics::clear(ctx, SOARING_EAGLE);
         // TODO: Get actual size of window instead of hardcoding.
         let (w, h) = (800.0, 600.0);
         let (w_size, h_size) = (w / 8.0, h / 8.0);
@@ -120,7 +134,7 @@ impl EventHandler for Game {
             mb.line(
                 &[[ii as f32 * w_size, h], [ii as f32 * w_size, 0.0]],
                 2.0,
-                QUINCE_JELLY,
+                WIZARD_GREY,
             )
             .unwrap();
         }
@@ -129,7 +143,7 @@ impl EventHandler for Game {
             mb.line(
                 &[[0.0, ii as f32 * h_size], [w, ii as f32 * h_size]],
                 2.0,
-                QUINCE_JELLY,
+                WIZARD_GREY,
             )
             .unwrap();
         }
