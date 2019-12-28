@@ -48,28 +48,42 @@ impl EventHandler for Game {
         let (w_size, h_size) = (w / 8.0, h / 8.0);
         let (col, row) = ((x / w_size).floor() as i32, (y / h_size).floor() as i32);
         if is_key_pressed(ctx, KeyCode::LShift) {
-            // Add to seleciton.
-        }
-        match self.board.get((col, row)) {
-            None => {
-                if let Some((x, y)) = self.selected_piece {
-                    if self.moves().contains(&(col, row)) {
-                        self.move_turn((x, y), (col, row));
-                    }
-                }
+            if self.contains_ally((col, row)) {
+                self.selected.push((col, row));
             }
-            Some(Piece { player, .. }) => {
-                if *player != self.turn {
-                    if let Some((x, y)) = self.selected_piece {
-                        if self.moves().contains(&(col, row)) {
-                            self.move_turn((x, y), (col, row));
+        } else {
+            match self.board.get((col, row)) {
+                // Move.
+                None => {
+                    // Multi selection is a compound move.
+                    // Given the only compound move in standard chess is the
+                    // "castle", we directly call into it.
+                    if self.selected.len() > 1 {
+                        self.castle_move()
+                    } else {
+                        if let Some((x, y)) = self.first_selected() {
+                            if self.moves((x, y)).contains(&(col, row)) {
+                                self.move_turn((x, y), (col, row));
+                            }
                         }
                     }
-                } else {
-                    self.selected_piece = Some((col as i32, row as i32));
                 }
-            }
-        };
+                // Attack move.
+                Some(Piece { player, .. }) => {
+                    if *player != self.turn && self.selected.len() == 1 {
+                        if let Some((x, y)) = self.first_selected() {
+                            if self.moves((x, y)).contains(&(col, row)) {
+                                self.move_turn((x, y), (col, row));
+                            }
+                        }
+                    } else {
+                        if self.contains_ally((col, row)) {
+                            self.selected = vec![(col as i32, row as i32)];
+                        }
+                    }
+                }
+            };
+        }
     }
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
@@ -106,15 +120,10 @@ impl EventHandler for Game {
                         Player::Black => graphics::BLACK,
                     };
                     // Highlight if selected piece.
-                    let color = match self.selected_piece {
-                        Some((xx, yy)) => {
-                            if xx as usize == x && yy as usize == y {
-                                PURE_APPLE
-                            } else {
-                                color
-                            }
-                        }
-                        _ => color,
+                    let color = if self.selected.contains(&(x as i32, y as i32)) {
+                        PURE_APPLE
+                    } else {
+                        color
                     };
                     // Render each unit as a text fragment.
                     // TODO: Use nice textures.
@@ -185,7 +194,8 @@ pub struct Board([[Option<Piece>; 8]; 8]);
 pub struct Game {
     pub board: Board,
     pub turn: Player,
-    pub selected_piece: Option<(i32, i32)>,
+    // Track selected pieces.
+    pub selected: Vec<(i32, i32)>,
 }
 
 impl Game {
@@ -194,114 +204,113 @@ impl Game {
         Game {
             board: Board::new(),
             turn: Player::White,
-            selected_piece: None,
+            selected: vec![],
         }
     }
     /// Moves calculates all valid moves for the currently selected piece.
     // TODO: Finish movement logic.
-    pub fn moves(&self) -> Vec<(i32, i32)> {
+    pub fn moves(&self, pos: (i32, i32)) -> Vec<(i32, i32)> {
+        let (x, y) = pos;
+        // How do we handle a vec of selected pieces while satisfying the BC.
         use Unit::*;
-        match self.selected_piece {
-            Some((x, y)) => match self.board.get((x, y)) {
-                Some(Piece {
-                    unit,
-                    player,
-                    moved,
-                }) => match unit {
-                    // Pawn can move in the direction of the player by 1 square.
-                    // For the first move, a pawn can move up to 2 squares.
-                    // Pawns can only attack diagonally in the direction of the
-                    // player.
-                    // Cannot attack straight ahead.
-                    Pawn => {
-                        let mut moves = vec![];
-                        match player {
-                            // Clean: The only difference between these two
-                            // blocks is the direction.
-                            Player::White => {
-                                if self.contains_enemy((x - 1, y + 1)) {
-                                    moves.push((x - 1, y + 1));
-                                }
-                                if self.contains_enemy((x + 1, y + 1)) {
-                                    moves.push((x + 1, y + 1));
-                                }
-                                if self.board.0[y as usize + 1][x as usize].is_none() {
-                                    moves.push((x, y + 1));
-                                    if *moved == 0 {
-                                        moves.push((x, y + 2));
-                                    }
+        match self.board.get((x, y)) {
+            Some(Piece {
+                unit,
+                player,
+                moved,
+            }) => match unit {
+                // Pawn can move in the direction of the player by 1 square.
+                // For the first move, a pawn can move up to 2 squares.
+                // Pawns can only attack diagonally in the direction of the
+                // player.
+                // Cannot attack straight ahead.
+                Pawn => {
+                    let mut moves = vec![];
+                    match player {
+                        // Clean: The only difference between these two
+                        // blocks is the direction.
+                        Player::White => {
+                            if self.contains_enemy((x - 1, y + 1)) {
+                                moves.push((x - 1, y + 1));
+                            }
+                            if self.contains_enemy((x + 1, y + 1)) {
+                                moves.push((x + 1, y + 1));
+                            }
+                            if self.board.0[y as usize + 1][x as usize].is_none() {
+                                moves.push((x, y + 1));
+                                if *moved == 0 {
+                                    moves.push((x, y + 2));
                                 }
                             }
-                            Player::Black => {
-                                if self.contains_enemy((x - 1, y - 1)) {
-                                    moves.push((x - 1, y - 1));
-                                }
-                                if self.contains_enemy((x + 1, y - 1)) {
-                                    moves.push((x + 1, y - 1));
-                                }
-                                if self.board.0[y as usize - 1][x as usize].is_none() {
-                                    moves.push((x, y - 1));
-                                    if *moved == 0 {
-                                        moves.push((x, y - 2));
-                                    }
+                        }
+                        Player::Black => {
+                            if self.contains_enemy((x - 1, y - 1)) {
+                                moves.push((x - 1, y - 1));
+                            }
+                            if self.contains_enemy((x + 1, y - 1)) {
+                                moves.push((x + 1, y - 1));
+                            }
+                            if self.board.0[y as usize - 1][x as usize].is_none() {
+                                moves.push((x, y - 1));
+                                if *moved == 0 {
+                                    moves.push((x, y - 2));
                                 }
                             }
-                        };
-                        moves
-                    }
-                    // Knight moves in an L shape: two out, one across.
-                    Knight => vec![
-                        (x + 2, y - 1),
-                        (x + 2, y + 1),
-                        (x - 2, y - 1),
-                        (x - 2, y + 1),
-                        (x + 1, y + 2),
-                        (x - 1, y + 2),
-                        (x + 1, y - 2),
-                        (x - 1, y - 2),
-                    ],
-                    // Rook moves in all non diagonal directions.
-                    Rook => vec![]
-                        .into_iter()
-                        .chain((1..8).map(|ii| (x + ii, y)))
-                        .chain((1..8).map(|ii| (x - ii, y)))
-                        .chain((1..8).map(|ii| (x, y + ii)))
-                        .chain((1..8).map(|ii| (x, y - ii)))
-                        .collect(),
-                    // Bishop moves all diagonal directions.
-                    Bishop => vec![]
-                        .into_iter()
-                        .chain((1..8).map(|ii| (x + ii, y + ii)))
-                        .chain((1..8).map(|ii| (x - ii, y - ii)))
-                        .chain((1..8).map(|ii| (x - ii, y + ii)))
-                        .chain((1..8).map(|ii| (x + ii, y - ii)))
-                        .collect(),
-                    // Queen moves in all eight directions.
-                    Queen => vec![]
-                        .into_iter()
-                        .chain((1..8).map(|ii| (x + ii, y)))
-                        .chain((1..8).map(|ii| (x - ii, y)))
-                        .chain((1..8).map(|ii| (x, y + ii)))
-                        .chain((1..8).map(|ii| (x, y - ii)))
-                        .chain((1..8).map(|ii| (x + ii, y + ii)))
-                        .chain((1..8).map(|ii| (x - ii, y - ii)))
-                        .chain((1..8).map(|ii| (x - ii, y + ii)))
-                        .chain((1..8).map(|ii| (x + ii, y - ii)))
-                        .collect(),
-                    // King can move to any adjacent cell that isn't occupied by
-                    // a piece of the same player.
-                    King => vec![
-                        (x + 1, y + 1),
-                        (x - 1, y - 1),
-                        (x + 1, y - 1),
-                        (x - 1, y + 1),
-                        (x + 1, y),
-                        (x - 1, y),
-                        (x, y + 1),
-                        (x, y - 1),
-                    ],
-                },
-                None => vec![],
+                        }
+                    };
+                    moves
+                }
+                // Knight moves in an L shape: two out, one across.
+                Knight => vec![
+                    (x + 2, y - 1),
+                    (x + 2, y + 1),
+                    (x - 2, y - 1),
+                    (x - 2, y + 1),
+                    (x + 1, y + 2),
+                    (x - 1, y + 2),
+                    (x + 1, y - 2),
+                    (x - 1, y - 2),
+                ],
+                // Rook moves in all non diagonal directions.
+                Rook => vec![]
+                    .into_iter()
+                    .chain((1..8).map(|ii| (x + ii, y)))
+                    .chain((1..8).map(|ii| (x - ii, y)))
+                    .chain((1..8).map(|ii| (x, y + ii)))
+                    .chain((1..8).map(|ii| (x, y - ii)))
+                    .collect(),
+                // Bishop moves all diagonal directions.
+                Bishop => vec![]
+                    .into_iter()
+                    .chain((1..8).map(|ii| (x + ii, y + ii)))
+                    .chain((1..8).map(|ii| (x - ii, y - ii)))
+                    .chain((1..8).map(|ii| (x - ii, y + ii)))
+                    .chain((1..8).map(|ii| (x + ii, y - ii)))
+                    .collect(),
+                // Queen moves in all eight directions.
+                Queen => vec![]
+                    .into_iter()
+                    .chain((1..8).map(|ii| (x + ii, y)))
+                    .chain((1..8).map(|ii| (x - ii, y)))
+                    .chain((1..8).map(|ii| (x, y + ii)))
+                    .chain((1..8).map(|ii| (x, y - ii)))
+                    .chain((1..8).map(|ii| (x + ii, y + ii)))
+                    .chain((1..8).map(|ii| (x - ii, y - ii)))
+                    .chain((1..8).map(|ii| (x - ii, y + ii)))
+                    .chain((1..8).map(|ii| (x + ii, y - ii)))
+                    .collect(),
+                // King can move to any adjacent cell that isn't occupied by
+                // a piece of the same player.
+                King => vec![
+                    (x + 1, y + 1),
+                    (x - 1, y - 1),
+                    (x + 1, y - 1),
+                    (x - 1, y + 1),
+                    (x + 1, y),
+                    (x - 1, y),
+                    (x, y + 1),
+                    (x, y - 1),
+                ],
             },
             None => vec![],
         }
@@ -311,12 +320,14 @@ impl Game {
     }
     /// Move a piece and conclude the turn.
     pub fn move_turn(&mut self, from: (i32, i32), to: (i32, i32)) {
-        self.board.move_piece((from.0, from.1), (to.0, to.1));
-        self.turn = match self.turn {
-            Player::Black => Player::White,
-            Player::White => Player::Black,
-        };
-        self.selected_piece = None;
+        if self.contains_ally(from) {
+            self.board.move_piece((from.0, from.1), (to.0, to.1));
+            self.turn = match self.turn {
+                Player::Black => Player::White,
+                Player::White => Player::Black,
+            };
+            self.selected = vec![];
+        }
     }
     /// Contains enemy if the specified position is occupied by a piece owned
     /// by the other player.
@@ -343,6 +354,46 @@ impl Game {
         } else {
             false
         }
+    }
+    /// Coordinate of the first selected piece.
+    fn first_selected(&mut self) -> Option<(i32, i32)> {
+        if self.selected.len() > 0 {
+            Some(self.selected[0].clone())
+        } else {
+            None
+        }
+    }
+    // TODO: impl castle move.
+    fn castle_move(&mut self) {
+        // Consider the first two moves of the selection as king and rook.
+        // Attempt the castle:
+        // - King and Rook must in original positions.
+        // - The two spaces between them must be empty.
+        // Clone out the first two selected coordinates.
+        // let pieces = self
+        //     .selected
+        //     .iter()
+        //     .cloned()
+        //     .take(2)
+        //     .collect::<Vec<(i32, i32)>>();
+        // // Check for King and Rook.
+        // if let (
+        //     Some(Piece {
+        //         unit: Unit::King, ..
+        //     }),
+        //     Some(Piece {
+        //         unit: Unit::Rook, ..
+        //     }),
+        // ) = (self.board.get(pieces[0]), self.board.get(pieces[1]))
+        // {
+        //     let (king, rook) = (pieces[0], pieces[1]);
+        //     if (king.0 - rook.0).abs() == 2 {
+        //         // correct distance
+
+        //     }
+        //     // - Original positions
+        //     // - Empty between them
+        // }
     }
 }
 
