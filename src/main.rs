@@ -1,26 +1,9 @@
-// TODO:
-// - Game loop
-// - Rendering
-
 use ggez::event::{self, EventHandler};
 use ggez::graphics;
 use ggez::graphics::{Color, DrawParam, MeshBuilder, Text};
+use ggez::input::keyboard::{is_key_pressed, KeyCode};
 use ggez::input::mouse::MouseButton;
 use ggez::{conf::WindowMode, Context, ContextBuilder, GameResult};
-
-const DEEP_COVE: Color = Color {
-    r: 19.0 / 256.0,
-    g: 15.0 / 256.0,
-    b: 64.0 / 256.0,
-    a: 1.0,
-};
-
-const QUINCE_JELLY: Color = Color {
-    r: 240.0 / 256.0,
-    g: 147.0 / 256.0,
-    b: 43.0 / 256.0,
-    a: 1.0,
-};
 
 const PURE_APPLE: Color = Color {
     r: 106.0 / 256.0,
@@ -60,59 +43,26 @@ impl EventHandler for Game {
         Ok(())
     }
 
-    fn mouse_button_up_event(&mut self, _ctx: &mut Context, _b: MouseButton, x: f32, y: f32) {
+    fn mouse_button_up_event(&mut self, ctx: &mut Context, _b: MouseButton, x: f32, y: f32) {
         let (w, h) = (800.0, 600.0);
         let (w_size, h_size) = (w / 8.0, h / 8.0);
         let (col, row) = ((x / w_size).floor() as i32, (y / h_size).floor() as i32);
-        // TODO: Sanity check.
-        // TODO: Refactor out movement code.
-        match &self.board.0[row as usize][col as usize] {
+        if is_key_pressed(ctx, KeyCode::LShift) {
+            // Add to seleciton.
+        }
+        match self.board.get((col, row)) {
             None => {
                 if let Some((x, y)) = self.selected_piece {
                     if self.moves().contains(&(col, row)) {
-                        if let Some(Piece {
-                            unit,
-                            player,
-                            moved,
-                        }) = self.board.0[y as usize][x as usize].take()
-                        {
-                            self.board.0[row as usize][col as usize] = Some(Piece {
-                                unit: unit,
-                                player: player,
-                                moved: moved + 1,
-                            });
-                            self.turn = match self.turn {
-                                Player::Black => Player::White,
-                                Player::White => Player::Black,
-                            };
-                            self.selected_piece = None;
-                        }
+                        self.move_turn((x, y), (col, row));
                     }
                 }
             }
             Some(Piece { player, .. }) => {
-                // We want to move to a location occupied by an enemy piece.
-                // Therefore this move is an "attack move".
                 if *player != self.turn {
                     if let Some((x, y)) = self.selected_piece {
                         if self.moves().contains(&(col, row)) {
-                            if let Some(Piece {
-                                unit,
-                                player,
-                                moved,
-                            }) = self.board.0[y as usize][x as usize].take()
-                            {
-                                self.board.0[row as usize][col as usize] = Some(Piece {
-                                    unit: unit,
-                                    player: player,
-                                    moved: moved + 1,
-                                });
-                                self.turn = match self.turn {
-                                    Player::Black => Player::White,
-                                    Player::White => Player::Black,
-                                };
-                                self.selected_piece = None;
-                            }
+                            self.move_turn((x, y), (col, row));
                         }
                     }
                 } else {
@@ -252,7 +202,7 @@ impl Game {
     pub fn moves(&self) -> Vec<(i32, i32)> {
         use Unit::*;
         match self.selected_piece {
-            Some((x, y)) => match &self.board.0[y as usize][x as usize] {
+            Some((x, y)) => match self.board.get((x, y)) {
                 Some(Piece {
                     unit,
                     player,
@@ -358,6 +308,15 @@ impl Game {
         .into_iter()
         .filter(|(x, y)| !self.contains_ally((*x, *y)))
         .collect()
+    }
+    /// Move a piece and conclude the turn.
+    pub fn move_turn(&mut self, from: (i32, i32), to: (i32, i32)) {
+        self.board.move_piece((from.0, from.1), (to.0, to.1));
+        self.turn = match self.turn {
+            Player::Black => Player::White,
+            Player::White => Player::Black,
+        };
+        self.selected_piece = None;
     }
     /// Contains enemy if the specified position is occupied by a piece owned
     /// by the other player.
@@ -565,5 +524,50 @@ impl Board {
                 }),
             ],
         ])
+    }
+    /// Get the piece at the specified (x, y) coordinate.
+    pub fn get(&self, pos: (i32, i32)) -> Option<&Piece> {
+        let (x, y) = pos;
+        if x < 0 || y < 0 || x > 7 || y > 7 {
+            None
+        } else {
+            self.0[y as usize][x as usize].as_ref()
+        }
+    }
+    /// Set the piece to the specified (x, y) coordinate.
+    /// Overwrites anything already at the location.
+    /// Noop if the coordinates are out of bounds.
+    pub fn set(&mut self, pos: (i32, i32), p: Piece) {
+        let (x, y) = pos;
+        if !(x < 0 || y < 0 || x > 7 || y > 7) {
+            self.0[y as usize][x as usize] = Some(p);
+        }
+    }
+    /// Move any piece at `from` to `to`.
+    /// Noop if there is no piece at `from`.
+    pub fn move_piece(&mut self, from: (i32, i32), to: (i32, i32)) {
+        if [from.0, from.1, to.0, to.1]
+            .iter()
+            .fold(false, |outofbounds, next| {
+                outofbounds || *next > 7 || *next < 0
+            })
+        {
+            return;
+        }
+        if let Some(Piece {
+            unit,
+            player,
+            moved,
+        }) = self.0[from.1 as usize][from.0 as usize].take()
+        {
+            self.set(
+                (to.0, to.1),
+                Piece {
+                    unit: unit,
+                    player: player,
+                    moved: moved + 1,
+                },
+            );
+        }
     }
 }
