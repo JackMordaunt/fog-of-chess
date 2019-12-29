@@ -130,23 +130,17 @@ impl EventHandler for Game {
                     // Chess pieces are part of unicode.
                     // All we need is a font that provides these.
                     // let font = graphics::Font::default();
-                    let text = match player {
-                        Player::White => match unit {
-                            Unit::Pawn => '\u{2659}',
-                            Unit::King => '\u{2654}',
-                            Unit::Queen => '\u{2655}',
-                            Unit::Bishop => '\u{2657}',
-                            Unit::Knight => '\u{2658}',
-                            Unit::Rook => '\u{2656}',
-                        },
-                        Player::Black => match unit {
-                            Unit::Pawn => '\u{265F}',
-                            Unit::King => '\u{265A}',
-                            Unit::Queen => '\u{265B}',
-                            Unit::Bishop => '\u{265D}',
-                            Unit::Knight => '\u{265E}',
-                            Unit::Rook => '\u{265C}',
-                        },
+                    let text = match unit {
+                        Unit::Pawn => '\u{265F}',
+                        Unit::King => '\u{265A}',
+                        Unit::Queen => '\u{265B}',
+                        Unit::Bishop => '\u{265D}',
+                        Unit::Knight => '\u{265E}',
+                        Unit::Rook => '\u{265C}',
+                    };
+                    let color = match player {
+                        Player::White => graphics::WHITE,
+                        Player::Black => graphics::BLACK,
                     };
                     let fragment: graphics::TextFragment = (text, self.font, 80.0).into();
                     graphics::queue_text(
@@ -154,7 +148,7 @@ impl EventHandler for Game {
                         &Text::new(fragment),
                         // TODO: Center dynamically instead of hardcoded padding.
                         [x as f32 * w_size + 25.0, y as f32 * h_size - 10.0],
-                        None,
+                        Some(color),
                     );
                 }
             }
