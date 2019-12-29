@@ -3,7 +3,8 @@ use ggez::graphics;
 use ggez::graphics::{Color, DrawParam, MeshBuilder, Text};
 use ggez::input::keyboard::{is_key_pressed, KeyCode};
 use ggez::input::mouse::MouseButton;
-use ggez::{conf::WindowMode, Context, ContextBuilder, GameResult};
+use ggez::{conf::WindowMode, conf::WindowSetup};
+use ggez::{Context, ContextBuilder, GameResult};
 
 const PURE_APPLE: Color = Color {
     r: 106.0 / 256.0,
@@ -29,6 +30,7 @@ const WIZARD_GREY: Color = Color {
 fn main() {
     let (mut ctx, mut event_loop) = ContextBuilder::new("Fog of War", "Jack Mordaunt")
         .window_mode(WindowMode::default().dimensions(800.0, 600.0))
+        .window_setup(WindowSetup::default().title("Fog of Chess"))
         .build()
         .expect("creating game loop");
     let mut g = Game::new(&mut ctx).expect("creating new game instance");
