@@ -30,8 +30,8 @@ fn main() {
     let (mut ctx, mut event_loop) = ContextBuilder::new("Fog of War", "Jack Mordaunt")
         .window_mode(WindowMode::default().dimensions(800.0, 600.0))
         .build()
-        .unwrap();
-    let mut g = Game::new();
+        .expect("creating game loop");
+    let mut g = Game::new(&mut ctx).expect("creating new game instance");
     match event::run(&mut ctx, &mut event_loop, &mut g) {
         Ok(_) => {}
         Err(e) => println!("error: {}", e),
@@ -87,62 +87,74 @@ impl EventHandler for Game {
     }
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
-        graphics::clear(ctx, SOARING_EAGLE);
+        graphics::clear(ctx, graphics::BLACK);
         // TODO: Get actual size of window instead of hardcoding.
         let (w, h) = (800.0, 600.0);
         let (w_size, h_size) = (w / 8.0, h / 8.0);
         let mut mb = MeshBuilder::new();
-        // Draw grid lines.
-        // Columns.
-        for ii in 0..9 {
-            mb.line(
-                &[[ii as f32 * w_size, h], [ii as f32 * w_size, 0.0]],
-                2.0,
-                WIZARD_GREY,
-            )
-            .unwrap();
-        }
-        // Rows.
-        for ii in 0..9 {
-            mb.line(
-                &[[0.0, ii as f32 * h_size], [w, ii as f32 * h_size]],
-                2.0,
-                WIZARD_GREY,
-            )
-            .unwrap();
-        }
         // Draw pieces.
         for (y, row) in self.board.0.iter().enumerate() {
             for (x, cell) in row.iter().enumerate() {
+                // Draw cell.
+                let color = if x % 2 == 0 && y % 2 == 0 {
+                    SOARING_EAGLE
+                } else if x % 2 != 0 && y % 2 != 0 {
+                    SOARING_EAGLE
+                } else {
+                    WIZARD_GREY
+                };
+                mb.rectangle(
+                    graphics::DrawMode::fill(),
+                    graphics::Rect::new_i32(
+                        x as i32 * w_size as i32,
+                        y as i32 * h_size as i32,
+                        w_size as i32,
+                        h_size as i32,
+                    ),
+                    color,
+                );
+                // Highlight selected pieces.
+                if self.selected.contains(&(x as i32, y as i32)) {
+                    mb.rectangle(
+                        graphics::DrawMode::stroke(2.0),
+                        graphics::Rect::new_i32(
+                            x as i32 * w_size as i32 + 1,
+                            y as i32 * h_size as i32 + 1,
+                            w_size as i32 - 2,
+                            h_size as i32 - 2,
+                        ),
+                        PURE_APPLE,
+                    );
+                };
                 if let Some(Piece { player, unit, .. }) = cell {
-                    let color = match player {
-                        Player::White => graphics::WHITE,
-                        Player::Black => graphics::BLACK,
+                    // Chess pieces are part of unicode.
+                    // All we need is a font that provides these.
+                    // let font = graphics::Font::default();
+                    let text = match player {
+                        Player::White => match unit {
+                            Unit::Pawn => '\u{2659}',
+                            Unit::King => '\u{2654}',
+                            Unit::Queen => '\u{2655}',
+                            Unit::Bishop => '\u{2657}',
+                            Unit::Knight => '\u{2658}',
+                            Unit::Rook => '\u{2656}',
+                        },
+                        Player::Black => match unit {
+                            Unit::Pawn => '\u{265F}',
+                            Unit::King => '\u{265A}',
+                            Unit::Queen => '\u{265B}',
+                            Unit::Bishop => '\u{265D}',
+                            Unit::Knight => '\u{265E}',
+                            Unit::Rook => '\u{265C}',
+                        },
                     };
-                    // Highlight if selected piece.
-                    let color = if self.selected.contains(&(x as i32, y as i32)) {
-                        PURE_APPLE
-                    } else {
-                        color
-                    };
-                    // Render each unit as a text fragment.
-                    // TODO: Use nice textures.
-                    let text = match unit {
-                        Unit::Pawn => "Pawn",
-                        Unit::King => "King",
-                        Unit::Queen => "Queen",
-                        Unit::Bishop => "Bishop",
-                        Unit::Knight => "Knight",
-                        Unit::Rook => "Rook",
-                    };
-                    let font = graphics::Font::default();
-                    let fragment: graphics::TextFragment = (text, font, 30.0).into();
+                    let fragment: graphics::TextFragment = (text, self.font, 80.0).into();
                     graphics::queue_text(
                         ctx,
                         &Text::new(fragment),
                         // TODO: Center dynamically instead of hardcoded padding.
-                        [x as f32 * w_size + 7.0, y as f32 * h_size + 7.0],
-                        Some(color),
+                        [x as f32 * w_size + 25.0, y as f32 * h_size - 10.0],
+                        None,
                     );
                 }
             }
@@ -153,7 +165,7 @@ impl EventHandler for Game {
             ctx,
             DrawParam::default(),
             None,
-            graphics::FilterMode::Nearest,
+            graphics::FilterMode::Linear,
         )?;
         graphics::present(ctx)
     }
@@ -196,16 +208,19 @@ pub struct Game {
     pub turn: Player,
     // Track selected pieces.
     pub selected: Vec<(i32, i32)>,
+    // Loaded font to use for rendering text.
+    pub font: graphics::Font,
 }
 
 impl Game {
     /// New creates a default chess game.
-    pub fn new() -> Self {
-        Game {
+    pub fn new(ctx: &mut Context) -> GameResult<Self> {
+        Ok(Game {
             board: Board::new(),
             turn: Player::White,
             selected: vec![],
-        }
+            font: graphics::Font::new(ctx, "/DejaVuSansMono.ttf")?,
+        })
     }
     /// Moves calculates all valid moves for the currently selected piece.
     // TODO: Finish movement logic.
