@@ -129,29 +129,65 @@ impl EventHandler for Game {
                     );
                 };
                 if let Some(Piece { player, unit, .. }) = cell {
-                    // Chess pieces are part of unicode.
-                    // All we need is a font that provides these.
-                    // let font = graphics::Font::default();
-                    let text = match unit {
-                        Unit::Pawn => '\u{265F}',
-                        Unit::King => '\u{265A}',
-                        Unit::Queen => '\u{265B}',
-                        Unit::Bishop => '\u{265D}',
-                        Unit::Knight => '\u{265E}',
-                        Unit::Rook => '\u{265C}',
-                    };
-                    let color = match player {
-                        Player::White => graphics::WHITE,
-                        Player::Black => graphics::BLACK,
-                    };
-                    let fragment: graphics::TextFragment = (text, self.font, 80.0).into();
-                    graphics::queue_text(
-                        ctx,
-                        &Text::new(fragment),
-                        // TODO: Center dynamically instead of hardcoded padding.
-                        [x as f32 * w_size + 25.0, y as f32 * h_size - 10.0],
-                        Some(color),
-                    );
+                    if *player != self.turn {
+                        continue;
+                    }
+                    if *player == self.turn {
+                        // Chess pieces are part of unicode.
+                        // All we need is a font that provides these.
+                        // let font = graphics::Font::default();
+                        let text = match unit {
+                            Unit::Pawn => '\u{265F}',
+                            Unit::King => '\u{265A}',
+                            Unit::Queen => '\u{265B}',
+                            Unit::Bishop => '\u{265D}',
+                            Unit::Knight => '\u{265E}',
+                            Unit::Rook => '\u{265C}',
+                        };
+                        let color = match player {
+                            Player::White => graphics::WHITE,
+                            Player::Black => graphics::BLACK,
+                        };
+                        let fragment: graphics::TextFragment = (text, self.font, 80.0).into();
+                        graphics::queue_text(
+                            ctx,
+                            &Text::new(fragment),
+                            // TODO: Center dynamically instead of hardcoded padding.
+                            [x as f32 * w_size + 25.0, y as f32 * h_size - 10.0],
+                            Some(color),
+                        );
+                        // draw enemy pieces that are within 2 squares of an
+                        // allied piece.
+                        for (x, y) in self.moves((x as i32, y as i32)) {
+                            if let Some(Piece { player, unit, .. }) =
+                                self.board.get((x as i32, y as i32))
+                            {
+                                if *player != self.turn {
+                                    let text = match unit {
+                                        Unit::Pawn => '\u{265F}',
+                                        Unit::King => '\u{265A}',
+                                        Unit::Queen => '\u{265B}',
+                                        Unit::Bishop => '\u{265D}',
+                                        Unit::Knight => '\u{265E}',
+                                        Unit::Rook => '\u{265C}',
+                                    };
+                                    let color = match player {
+                                        Player::White => graphics::WHITE,
+                                        Player::Black => graphics::BLACK,
+                                    };
+                                    let fragment: graphics::TextFragment =
+                                        (text, self.font, 80.0).into();
+                                    graphics::queue_text(
+                                        ctx,
+                                        &Text::new(fragment),
+                                        // TODO: Center dynamically instead of hardcoded padding.
+                                        [x as f32 * w_size + 25.0, y as f32 * h_size - 10.0],
+                                        Some(color),
+                                    );
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -219,10 +255,8 @@ impl Game {
         })
     }
     /// Moves calculates all valid moves for the currently selected piece.
-    // TODO: Finish movement logic.
     pub fn moves(&self, pos: (i32, i32)) -> Vec<(i32, i32)> {
         let (x, y) = pos;
-        // How do we handle a vec of selected pieces while satisfying the BC.
         use Unit::*;
         match self.board.get((x, y)) {
             Some(Piece {
@@ -285,30 +319,54 @@ impl Game {
                 // Rook moves in all non diagonal directions.
                 Rook => vec![]
                     .into_iter()
-                    .chain((1..8).map(|ii| (x + ii, y)))
-                    .chain((1..8).map(|ii| (x - ii, y)))
-                    .chain((1..8).map(|ii| (x, y + ii)))
-                    .chain((1..8).map(|ii| (x, y - ii)))
+                    .chain(LineOfSight::new((1..8).map(|ii| (x + ii, y)), &self.board))
+                    .chain(LineOfSight::new((1..8).map(|ii| (x - ii, y)), &self.board))
+                    .chain(LineOfSight::new((1..8).map(|ii| (x, y + ii)), &self.board))
+                    .chain(LineOfSight::new((1..8).map(|ii| (x, y - ii)), &self.board))
                     .collect(),
                 // Bishop moves all diagonal directions.
                 Bishop => vec![]
                     .into_iter()
-                    .chain((1..8).map(|ii| (x + ii, y + ii)))
-                    .chain((1..8).map(|ii| (x - ii, y - ii)))
-                    .chain((1..8).map(|ii| (x - ii, y + ii)))
-                    .chain((1..8).map(|ii| (x + ii, y - ii)))
+                    .chain(LineOfSight::new(
+                        (1..8).map(|ii| (x + ii, y + ii)),
+                        &self.board,
+                    ))
+                    .chain(LineOfSight::new(
+                        (1..8).map(|ii| (x - ii, y - ii)),
+                        &self.board,
+                    ))
+                    .chain(LineOfSight::new(
+                        (1..8).map(|ii| (x - ii, y + ii)),
+                        &self.board,
+                    ))
+                    .chain(LineOfSight::new(
+                        (1..8).map(|ii| (x + ii, y - ii)),
+                        &self.board,
+                    ))
                     .collect(),
                 // Queen moves in all eight directions.
                 Queen => vec![]
                     .into_iter()
-                    .chain((1..8).map(|ii| (x + ii, y)))
-                    .chain((1..8).map(|ii| (x - ii, y)))
-                    .chain((1..8).map(|ii| (x, y + ii)))
-                    .chain((1..8).map(|ii| (x, y - ii)))
-                    .chain((1..8).map(|ii| (x + ii, y + ii)))
-                    .chain((1..8).map(|ii| (x - ii, y - ii)))
-                    .chain((1..8).map(|ii| (x - ii, y + ii)))
-                    .chain((1..8).map(|ii| (x + ii, y - ii)))
+                    .chain(LineOfSight::new((1..8).map(|ii| (x + ii, y)), &self.board))
+                    .chain(LineOfSight::new((1..8).map(|ii| (x - ii, y)), &self.board))
+                    .chain(LineOfSight::new((1..8).map(|ii| (x, y + ii)), &self.board))
+                    .chain(LineOfSight::new((1..8).map(|ii| (x, y - ii)), &self.board))
+                    .chain(LineOfSight::new(
+                        (1..8).map(|ii| (x + ii, y + ii)),
+                        &self.board,
+                    ))
+                    .chain(LineOfSight::new(
+                        (1..8).map(|ii| (x - ii, y - ii)),
+                        &self.board,
+                    ))
+                    .chain(LineOfSight::new(
+                        (1..8).map(|ii| (x - ii, y + ii)),
+                        &self.board,
+                    ))
+                    .chain(LineOfSight::new(
+                        (1..8).map(|ii| (x + ii, y - ii)),
+                        &self.board,
+                    ))
                     .collect(),
                 // King can move to any adjacent cell that isn't occupied by
                 // a piece of the same player.
@@ -630,6 +688,53 @@ impl Board {
                     moved: moved + 1,
                 },
             );
+        }
+    }
+}
+
+// LineOfSight yields coordinates from a move-set until a piece is found.
+// Truncate move-set for Queen/Rook/Bishop such that these pieces cannot
+// jump over another.
+struct LineOfSight<'a, Moves>
+where
+    Moves: Iterator<Item = (i32, i32)>,
+{
+    moves: Moves,
+    board: &'a Board,
+    stop: bool,
+}
+
+impl<'a, Moves> LineOfSight<'a, Moves>
+where
+    Moves: Iterator<Item = (i32, i32)>,
+{
+    fn new(moves: Moves, board: &'a Board) -> Self {
+        LineOfSight {
+            moves,
+            board,
+            stop: false,
+        }
+    }
+}
+
+impl<'a, Moves> Iterator for LineOfSight<'a, Moves>
+where
+    Moves: Iterator<Item = (i32, i32)>,
+{
+    type Item = (i32, i32);
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.stop {
+            return None;
+        }
+        match self.moves.next() {
+            Some((x, y)) => match self.board.get((x, y)) {
+                Some(_) => {
+                    self.stop = true;
+                    Some((x, y))
+                }
+                None => Some((x, y)),
+            },
+            None => None,
         }
     }
 }
