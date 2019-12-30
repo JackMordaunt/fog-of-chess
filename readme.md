@@ -6,6 +6,12 @@ Information is power.
 
 Written in Rust using [ggez](https://github.com/ggez/ggez).
 
+```
+git clone https://github.com/jackmordaunt/fog-of-chess
+cd fog-of-chess
+cargo run --release
+```
+
 ![fog of chess](doc/fog_of_chess.png)
 
 ## Features
