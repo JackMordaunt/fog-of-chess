@@ -259,7 +259,10 @@ impl Game {
             board: Board::new(),
             turn: Player::White,
             selected: vec![],
-            font: graphics::Font::new(ctx, "/DejaVuSansMono.ttf")?,
+            font: graphics::Font::new_glyph_font_bytes(
+                ctx,
+                include_bytes!("../res/DejaVuSansMono.ttf"),
+            )?,
         })
     }
     /// Moves calculates all valid moves for the currently selected piece.
