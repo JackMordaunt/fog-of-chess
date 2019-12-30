@@ -1,3 +1,5 @@
+#![windows_subsystem = "windows"]
+
 use ggez::event::{self, EventHandler};
 use ggez::graphics;
 use ggez::graphics::{Color, DrawParam, MeshBuilder, Text};
