@@ -97,41 +97,11 @@ impl EventHandler for Game {
         // Draw pieces.
         for (y, row) in self.board.0.iter().enumerate() {
             for (x, cell) in row.iter().enumerate() {
-                // Draw cell.
-                let color = if x % 2 == 0 && y % 2 == 0 {
-                    SOARING_EAGLE
-                } else if x % 2 != 0 && y % 2 != 0 {
-                    SOARING_EAGLE
-                } else {
-                    WIZARD_GREY
-                };
-                mb.rectangle(
-                    graphics::DrawMode::fill(),
-                    graphics::Rect::new_i32(
-                        x as i32 * w_size as i32,
-                        y as i32 * h_size as i32,
-                        w_size as i32,
-                        h_size as i32,
-                    ),
-                    color,
-                );
-                // Highlight selected pieces.
-                if self.selected.contains(&(x as i32, y as i32)) {
-                    mb.rectangle(
-                        graphics::DrawMode::stroke(2.0),
-                        graphics::Rect::new_i32(
-                            x as i32 * w_size as i32 + 1,
-                            y as i32 * h_size as i32 + 1,
-                            w_size as i32 - 2,
-                            h_size as i32 - 2,
-                        ),
-                        PURE_APPLE,
-                    );
-                };
                 if let Some(Piece { player, unit, .. }) = cell {
                     if *player != self.turn {
                         continue;
                     }
+                    // Draw the current piece.
                     if *player == self.turn {
                         // Chess pieces are part of unicode.
                         // All we need is a font that provides these.
@@ -156,9 +126,47 @@ impl EventHandler for Game {
                             [x as f32 * w_size + 25.0, y as f32 * h_size - 10.0],
                             Some(color),
                         );
-                        // draw enemy pieces that are within 2 squares of an
-                        // allied piece.
-                        for (x, y) in self.line_of_sight((x as i32, y as i32)) {
+                        // Draw everything that is in line of sight of the
+                        // current piece.
+                        // TOOD: Given that all allied pieces will be drawn by
+                        // previous code we can tighten this to "draw all
+                        // enemies in line of sight".
+                        for (x, y) in self
+                            .line_of_sight((x as i32, y as i32))
+                            .into_iter()
+                            .chain(vec![(x as i32, y as i32)])
+                        {
+                            // Draw cell.
+                            let color = if x % 2 == 0 && y % 2 == 0 {
+                                SOARING_EAGLE
+                            } else if x % 2 != 0 && y % 2 != 0 {
+                                SOARING_EAGLE
+                            } else {
+                                WIZARD_GREY
+                            };
+                            mb.rectangle(
+                                graphics::DrawMode::fill(),
+                                graphics::Rect::new_i32(
+                                    x as i32 * w_size as i32,
+                                    y as i32 * h_size as i32,
+                                    w_size as i32,
+                                    h_size as i32,
+                                ),
+                                color,
+                            );
+                            // Highlight selected pieces.
+                            if self.selected.contains(&(x as i32, y as i32)) {
+                                mb.rectangle(
+                                    graphics::DrawMode::stroke(2.0),
+                                    graphics::Rect::new_i32(
+                                        x as i32 * w_size as i32 + 1,
+                                        y as i32 * h_size as i32 + 1,
+                                        w_size as i32 - 2,
+                                        h_size as i32 - 2,
+                                    ),
+                                    PURE_APPLE,
+                                );
+                            };
                             if let Some(Piece { player, unit, .. }) =
                                 self.board.get((x as i32, y as i32))
                             {
