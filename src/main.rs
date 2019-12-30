@@ -283,7 +283,8 @@ impl Game {
                             }
                             if self.board.0[y as usize + 1][x as usize].is_none() {
                                 moves.push((x, y + 1));
-                                if *moved == 0 {
+                                if *moved == 0 && self.board.0[y as usize + 2][x as usize].is_none()
+                                {
                                     moves.push((x, y + 2));
                                 }
                             }
@@ -297,7 +298,8 @@ impl Game {
                             }
                             if self.board.0[y as usize - 1][x as usize].is_none() {
                                 moves.push((x, y - 1));
-                                if *moved == 0 {
+                                if *moved == 0 && self.board.0[y as usize - 2][x as usize].is_none()
+                                {
                                     moves.push((x, y - 2));
                                 }
                             }
