@@ -158,7 +158,7 @@ impl EventHandler for Game {
                         );
                         // draw enemy pieces that are within 2 squares of an
                         // allied piece.
-                        for (x, y) in self.moves((x as i32, y as i32)) {
+                        for (x, y) in self.line_of_sight((x as i32, y as i32)) {
                             if let Some(Piece { player, unit, .. }) =
                                 self.board.get((x as i32, y as i32))
                             {
@@ -386,6 +386,26 @@ impl Game {
         .into_iter()
         .filter(|(x, y)| !self.contains_ally((*x, *y)))
         .collect()
+    }
+    // Calculate line of sight for any piece at the given coordinate.
+    pub fn line_of_sight(&self, pos: (i32, i32)) -> Vec<(i32, i32)> {
+        let (x, y) = pos;
+        self.moves(pos)
+            .into_iter()
+            .chain(
+                vec![
+                    (x + 1, y + 1),
+                    (x - 1, y - 1),
+                    (x + 1, y - 1),
+                    (x - 1, y + 1),
+                    (x + 1, y),
+                    (x - 1, y),
+                    (x, y + 1),
+                    (x, y - 1),
+                ]
+                .into_iter(),
+            )
+            .collect()
     }
     /// Move a piece and conclude the turn.
     pub fn move_turn(&mut self, from: (i32, i32), to: (i32, i32)) {
