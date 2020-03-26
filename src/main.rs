@@ -1,5 +1,7 @@
-#![windows_subsystem = "windows"]
+// #![windows_subsystem = "windows"]
 
+use clap::{App, Arg, SubCommand};
+use derive_builder::*;
 use ggez::event::{self, EventHandler};
 use ggez::graphics;
 use ggez::graphics::{Color, DrawParam, MeshBuilder, Text};
@@ -7,6 +9,7 @@ use ggez::input::keyboard::{is_key_pressed, KeyCode};
 use ggez::input::mouse::MouseButton;
 use ggez::{conf::WindowMode, conf::WindowSetup};
 use ggez::{Context, ContextBuilder, GameResult};
+use std::error::Error;
 
 const PURE_APPLE: Color = Color {
     r: 106.0 / 256.0,
@@ -30,12 +33,27 @@ const WIZARD_GREY: Color = Color {
 };
 
 fn main() {
+    let app = App::new("Fog Of Chess")
+        .subcommand(SubCommand::with_name("test").arg(Arg::with_name("scenario").required(true)))
+        .get_matches();
+    let board = match app.subcommand_matches("test") {
+        Some(test) => match Board::scenario(
+            test.value_of("scenario")
+                .expect("scenario argument missing"),
+        ) {
+            Some(board) => board,
+            None => panic!("scenario does not exist"),
+        },
+        None => Board::new(),
+    };
+    // let fog = app.is_present("no-fog");
+    // TODO: Game builder API.
     let (mut ctx, mut event_loop) = ContextBuilder::new("Fog of War", "Jack Mordaunt")
         .window_mode(WindowMode::default().dimensions(800.0, 600.0))
         .window_setup(WindowSetup::default().title("Fog of Chess"))
         .build()
         .expect("creating game loop");
-    let mut g = Game::new(&mut ctx).expect("creating new game instance");
+    let mut g = Game::with_board(&mut ctx, board).expect("creating new game instance");
     match event::run(&mut ctx, &mut event_loop, &mut g) {
         Ok(_) => {}
         Err(e) => println!("error: {}", e),
@@ -53,6 +71,7 @@ impl EventHandler for Game {
         let (col, row) = ((x / w_size).floor() as i32, (y / h_size).floor() as i32);
         if is_key_pressed(ctx, KeyCode::LShift) {
             if self.contains_ally((col, row)) {
+                // BUG: Avoid duplicates.
                 self.selected.push((col, row));
             }
         } else {
@@ -214,7 +233,7 @@ impl EventHandler for Game {
 }
 
 /// Unique chess units.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Unit {
     Pawn,
     Rook,
@@ -225,14 +244,14 @@ pub enum Unit {
 }
 
 /// Player denotes the two unique players that can own units.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Player {
     White,
     Black,
 }
 
 /// Piece is a Unit-Player pair that represents a piece on the board.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Piece {
     pub unit: Unit,
     pub player: Player,
@@ -241,10 +260,11 @@ pub struct Piece {
 }
 
 /// Board contains the location information of each piece.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct Board([[Option<Piece>; 8]; 8]);
 
 /// Game contains meta information.
+#[derive(Clone, Builder)]
 pub struct Game {
     pub board: Board,
     pub turn: Player,
@@ -259,6 +279,34 @@ impl Game {
     pub fn new(ctx: &mut Context) -> GameResult<Self> {
         Ok(Game {
             board: Board::new(),
+            turn: Player::White,
+            selected: vec![],
+            font: graphics::Font::new_glyph_font_bytes(
+                ctx,
+                include_bytes!("../res/DejaVuSansMono.ttf"),
+            )?,
+        })
+    }
+    /// Create a new game with the specified board.
+    pub fn with_board(ctx: &mut Context, b: Board) -> GameResult<Self> {
+        Ok(Game {
+            board: b,
+            turn: Player::White,
+            selected: vec![],
+            font: graphics::Font::new_glyph_font_bytes(
+                ctx,
+                include_bytes!("../res/DejaVuSansMono.ttf"),
+            )?,
+        })
+    }
+    /// Create a board for the given scenario by name.
+    pub fn scenario(ctx: &mut Context, scenario: &str) -> Result<Self, Box<dyn Error>> {
+        let board = match Board::scenario(scenario) {
+            Some(b) => b,
+            None => return Err("scenario does not exist".into()),
+        };
+        Ok(Game {
+            board: board,
             turn: Player::White,
             selected: vec![],
             font: graphics::Font::new_glyph_font_bytes(
@@ -469,35 +517,38 @@ impl Game {
     }
     // TODO: impl castle move.
     fn castle_move(&mut self) {
-        // Consider the first two moves of the selection as king and rook.
-        // Attempt the castle:
-        // - King and Rook must in original positions.
-        // - The two spaces between them must be empty.
+        // Outline:
+        //  Consider the first two moves of the selection as king and rook.
+        //  Attempt the castle:
+        //  - King and Rook must be in original positions.
+        //  - The two spaces between them must be empty.
+        //  - King and Rook swap to the middle two pieces, completing the castle.
+        //
         // Clone out the first two selected coordinates.
-        // let pieces = self
-        //     .selected
-        //     .iter()
-        //     .cloned()
-        //     .take(2)
-        //     .collect::<Vec<(i32, i32)>>();
-        // // Check for King and Rook.
-        // if let (
-        //     Some(Piece {
-        //         unit: Unit::King, ..
-        //     }),
-        //     Some(Piece {
-        //         unit: Unit::Rook, ..
-        //     }),
-        // ) = (self.board.get(pieces[0]), self.board.get(pieces[1]))
-        // {
-        //     let (king, rook) = (pieces[0], pieces[1]);
-        //     if (king.0 - rook.0).abs() == 2 {
-        //         // correct distance
-
-        //     }
-        //     // - Original positions
-        //     // - Empty between them
-        // }
+        let pieces = self
+            .selected
+            .iter()
+            .cloned()
+            .take(2)
+            .collect::<Vec<(i32, i32)>>();
+        let (king_pos, rook_pos) = (pieces[0], pieces[1]);
+        // Check for King and Rook.
+        if let (
+            Some(&Piece {
+                unit: Unit::King, ..
+            }),
+            Some(&Piece {
+                unit: Unit::Rook, ..
+            }),
+        ) = (self.board.get(king_pos), self.board.get(rook_pos))
+        {
+            if (king_pos.0 - rook_pos.0).abs() == 2 {
+                // correct distance
+                println!("can castle!");
+            }
+            // - Original positions
+            // - Empty between them
+        }
     }
 }
 
@@ -678,6 +729,45 @@ impl Board {
                     moved: 0,
                 }),
             ],
+        ])
+    }
+    /// scenario sets up a board for the given scenario, identified by name.
+    pub fn scenario(title: &str) -> Option<Self> {
+        match title {
+            "castle" => Some(Board::castle_test()),
+            _ => None,
+        }
+    }
+    /// castle_test creates a new board for testing castle moves.
+    fn castle_test() -> Self {
+        use Player::*;
+        use Unit::*;
+        Board([
+            [
+                Some(Piece {
+                    unit: Rook,
+                    player: White,
+                    moved: 0,
+                }),
+                None,
+                None,
+                Some(Piece {
+                    unit: King,
+                    player: White,
+                    moved: 0,
+                }),
+                None,
+                None,
+                None,
+                None,
+            ],
+            [None, None, None, None, None, None, None, None],
+            [None, None, None, None, None, None, None, None],
+            [None, None, None, None, None, None, None, None],
+            [None, None, None, None, None, None, None, None],
+            [None, None, None, None, None, None, None, None],
+            [None, None, None, None, None, None, None, None],
+            [None, None, None, None, None, None, None, None],
         ])
     }
     /// Get the piece at the specified (x, y) coordinate.
