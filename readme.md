@@ -21,3 +21,9 @@ cargo run --release
 - [ ] Compound movements such as the castle move.
 - [ ] Win condtions (currently player-enforced), check and check-mate.
 - [ ] Networked multiplayer.
+- [ ] Fog Toggle.
+- [ ] HUD (display current player turn, timer, menu to change game states).
+
+## Backlog
+
+- [ ] Auto-center pieces.
