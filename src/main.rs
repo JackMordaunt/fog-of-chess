@@ -4,7 +4,7 @@ use clap::{App, Arg, SubCommand};
 use derive_builder::*;
 use ggez::event::{self, EventHandler};
 use ggez::graphics;
-use ggez::graphics::{Color, DrawParam, MeshBuilder, Text};
+use ggez::graphics::{Color, DrawParam, Font, MeshBuilder, Text};
 use ggez::input::keyboard::{is_key_pressed, KeyCode};
 use ggez::input::mouse::MouseButton;
 use ggez::{conf::WindowMode, conf::WindowSetup};
@@ -34,6 +34,7 @@ const WIZARD_GREY: Color = Color {
 
 fn main() {
     let app = App::new("Fog Of Chess")
+        .arg(Arg::with_name("no-fog").takes_value(false))
         .subcommand(SubCommand::with_name("test").arg(Arg::with_name("scenario").required(true)))
         .get_matches();
     let board = match app.subcommand_matches("test") {
@@ -46,14 +47,22 @@ fn main() {
         },
         None => Board::new(),
     };
-    // let fog = app.is_present("no-fog");
-    // TODO: Game builder API.
     let (mut ctx, mut event_loop) = ContextBuilder::new("Fog of War", "Jack Mordaunt")
         .window_mode(WindowMode::default().dimensions(800.0, 600.0))
         .window_setup(WindowSetup::default().title("Fog of Chess"))
         .build()
         .expect("creating game loop");
-    let mut g = Game::with_board(&mut ctx, board).expect("creating new game instance");
+    let mut g = GameBuilder::default()
+        .board(board)
+        .fog(!app.is_present("no-fog"))
+        .selected(vec![])
+        .turn(Player::White)
+        .font(
+            Font::new_glyph_font_bytes(&mut ctx, include_bytes!("../res/DejaVuSansMono.ttf"))
+                .expect("loading font"),
+        )
+        .build()
+        .expect("building game object");
     match event::run(&mut ctx, &mut event_loop, &mut g) {
         Ok(_) => {}
         Err(e) => println!("error: {}", e),
@@ -268,10 +277,10 @@ pub struct Board([[Option<Piece>; 8]; 8]);
 pub struct Game {
     pub board: Board,
     pub turn: Player,
-    // Track selected pieces.
+    // TODO: Use set to avoid duplicates.
     pub selected: Vec<(i32, i32)>,
-    // Loaded font to use for rendering text.
     pub font: graphics::Font,
+    pub fog: bool,
 }
 
 impl Game {
@@ -285,6 +294,7 @@ impl Game {
                 ctx,
                 include_bytes!("../res/DejaVuSansMono.ttf"),
             )?,
+            fog: true,
         })
     }
     /// Create a new game with the specified board.
@@ -297,6 +307,7 @@ impl Game {
                 ctx,
                 include_bytes!("../res/DejaVuSansMono.ttf"),
             )?,
+            fog: true,
         })
     }
     /// Create a board for the given scenario by name.
@@ -313,6 +324,7 @@ impl Game {
                 ctx,
                 include_bytes!("../res/DejaVuSansMono.ttf"),
             )?,
+            fog: true,
         })
     }
     /// Moves calculates all valid moves for the currently selected piece.
