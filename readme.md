@@ -20,8 +20,9 @@ cargo run --release
 - [x] Basic line of sight based on move-set and adjacent positions.
 - [ ] Compound movements such as the castle move.
 - [ ] Win condtions (currently player-enforced), check and check-mate.
+    - Win screen with player, button to restart.
 - [ ] Networked multiplayer.
-- [ ] Fog Toggle.
+- [x] Fog Toggle.
 - [ ] HUD (display current player turn, timer, menu to change game states).
 
 ## Backlog

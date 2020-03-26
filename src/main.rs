@@ -9,7 +9,6 @@ use ggez::input::keyboard::{is_key_pressed, KeyCode};
 use ggez::input::mouse::MouseButton;
 use ggez::{conf::WindowMode, conf::WindowSetup};
 use ggez::{Context, ContextBuilder, GameResult};
-use std::error::Error;
 
 const PURE_APPLE: Color = Color {
     r: 106.0 / 256.0,
@@ -34,18 +33,29 @@ const WIZARD_GREY: Color = Color {
 
 fn main() {
     let app = App::new("Fog Of Chess")
-        .arg(Arg::with_name("no-fog").takes_value(false))
-        .subcommand(SubCommand::with_name("test").arg(Arg::with_name("scenario").required(true)))
+        .arg(
+            Arg::with_name("no-fog")
+                .takes_value(false)
+                .long("no-fog")
+                .help("Turn off the fog of war."),
+        )
+        .subcommand(
+            SubCommand::with_name("test").arg(
+                Arg::with_name("scenario")
+                    .required(true)
+                    .help("Name of scenario to test."),
+            ),
+        )
         .get_matches();
-    let board = match app.subcommand_matches("test") {
+    let (board, single_player) = match app.subcommand_matches("test") {
         Some(test) => match Board::scenario(
             test.value_of("scenario")
                 .expect("scenario argument missing"),
         ) {
-            Some(board) => board,
+            Some(board) => (board, true),
             None => panic!("scenario does not exist"),
         },
-        None => Board::new(),
+        None => (Board::new(), false),
     };
     let (mut ctx, mut event_loop) = ContextBuilder::new("Fog of War", "Jack Mordaunt")
         .window_mode(WindowMode::default().dimensions(800.0, 600.0))
@@ -54,6 +64,7 @@ fn main() {
         .expect("creating game loop");
     let mut g = GameBuilder::default()
         .board(board)
+        .single_player(single_player)
         .fog(!app.is_present("no-fog"))
         .selected(vec![])
         .turn(Player::White)
@@ -277,56 +288,14 @@ pub struct Board([[Option<Piece>; 8]; 8]);
 pub struct Game {
     pub board: Board,
     pub turn: Player,
-    // TODO: Use set to avoid duplicates.
+    // TODO: Use a set to avoid duplicates.
     pub selected: Vec<(i32, i32)>,
     pub font: graphics::Font,
     pub fog: bool,
+    pub single_player: bool,
 }
 
 impl Game {
-    /// New creates a default chess game.
-    pub fn new(ctx: &mut Context) -> GameResult<Self> {
-        Ok(Game {
-            board: Board::new(),
-            turn: Player::White,
-            selected: vec![],
-            font: graphics::Font::new_glyph_font_bytes(
-                ctx,
-                include_bytes!("../res/DejaVuSansMono.ttf"),
-            )?,
-            fog: true,
-        })
-    }
-    /// Create a new game with the specified board.
-    pub fn with_board(ctx: &mut Context, b: Board) -> GameResult<Self> {
-        Ok(Game {
-            board: b,
-            turn: Player::White,
-            selected: vec![],
-            font: graphics::Font::new_glyph_font_bytes(
-                ctx,
-                include_bytes!("../res/DejaVuSansMono.ttf"),
-            )?,
-            fog: true,
-        })
-    }
-    /// Create a board for the given scenario by name.
-    pub fn scenario(ctx: &mut Context, scenario: &str) -> Result<Self, Box<dyn Error>> {
-        let board = match Board::scenario(scenario) {
-            Some(b) => b,
-            None => return Err("scenario does not exist".into()),
-        };
-        Ok(Game {
-            board: board,
-            turn: Player::White,
-            selected: vec![],
-            font: graphics::Font::new_glyph_font_bytes(
-                ctx,
-                include_bytes!("../res/DejaVuSansMono.ttf"),
-            )?,
-            fog: true,
-        })
-    }
     /// Moves calculates all valid moves for the currently selected piece.
     pub fn moves(&self, pos: (i32, i32)) -> Vec<(i32, i32)> {
         let (x, y) = pos;
@@ -486,10 +455,12 @@ impl Game {
     pub fn move_turn(&mut self, from: (i32, i32), to: (i32, i32)) {
         if self.contains_ally(from) {
             self.board.move_piece((from.0, from.1), (to.0, to.1));
-            self.turn = match self.turn {
-                Player::Black => Player::White,
-                Player::White => Player::Black,
-            };
+            if !self.single_player {
+                self.turn = match self.turn {
+                    Player::Black => Player::White,
+                    Player::White => Player::Black,
+                };
+            }
             self.selected = vec![];
         }
     }
