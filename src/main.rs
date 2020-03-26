@@ -94,6 +94,7 @@ impl EventHandler for Game {
                 // BUG: Avoid duplicates.
                 self.selected.push((col, row));
             }
+            println!("selection: {:?}", self.selected);
         } else {
             match self.board.get((col, row)) {
                 // Move.
@@ -498,39 +499,39 @@ impl Game {
             None
         }
     }
-    // TODO: impl castle move.
+    /// Perform castle move if valid.
+    /// Castle move where King and Rook crossover into the 2 spaces between them.
+    /// Only valid if:
+    /// - Pieces are the same player (duh).
+    /// - Neither piece has been moved.
+    /// - Nothing is in the two spaces between them.
     fn castle_move(&mut self) {
-        // Outline:
-        //  Consider the first two moves of the selection as king and rook.
-        //  Attempt the castle:
-        //  - King and Rook must be in original positions.
-        //  - The two spaces between them must be empty.
-        //  - King and Rook swap to the middle two pieces, completing the castle.
-        //
-        // Clone out the first two selected coordinates.
-        let pieces = self
-            .selected
+        let pieces = self.selected.iter().take(2).collect::<Vec<&(i32, i32)>>();
+        // Vec of two pieces must be a Rook and King.
+        // This tests that both pieces are either Rook or King.
+        // BUG: Will accept two Rooks or Kings which is nonesensical.
+        let valid = pieces
             .iter()
-            .cloned()
-            .take(2)
-            .collect::<Vec<(i32, i32)>>();
-        let (king_pos, rook_pos) = (pieces[0], pieces[1]);
-        // Check for King and Rook.
-        if let (
-            Some(&Piece {
-                unit: Unit::King, ..
-            }),
-            Some(&Piece {
-                unit: Unit::Rook, ..
-            }),
-        ) = (self.board.get(king_pos), self.board.get(rook_pos))
-        {
-            if (king_pos.0 - rook_pos.0).abs() == 2 {
-                // correct distance
-                println!("can castle!");
-            }
+            .fold(true, |valid, next| match self.board.get(**next) {
+                Some(Piece {
+                    unit: Unit::Rook, ..
+                }) => true && valid,
+                Some(Piece {
+                    unit: Unit::King, ..
+                }) => true && valid,
+                _ => false,
+            });
+        if valid {
+            // TODO: Validate.
             // - Original positions
             // - Empty between them
+            // - [x] Distance of two
+            // - Direction based on player.
+            let (left, right) = (*pieces[0], *pieces[1]);
+            if (left.0 - right.0).abs() - 1 == 2 {
+                self.board.move_piece(left, (left.0 + 2, left.1));
+                self.board.move_piece(right, (right.0 - 2, right.1));
+            }
         }
     }
 }
