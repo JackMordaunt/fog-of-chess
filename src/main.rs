@@ -3,9 +3,8 @@
 use clap::{App, Arg, SubCommand};
 use derive_builder::*;
 use ggez::event::{self, EventHandler};
-use ggez::graphics;
-use ggez::graphics::{Color, DrawParam, Font, MeshBuilder, Text};
-use ggez::input::keyboard::{is_key_pressed, KeyCode};
+use ggez::graphics::{self, Color, DrawParam, Font, MeshBuilder, Rect, Text};
+use ggez::input::keyboard::{is_key_pressed, KeyCode, KeyMods};
 use ggez::input::mouse::MouseButton;
 use ggez::{conf::WindowMode, conf::WindowSetup};
 use ggez::{Context, ContextBuilder, GameResult};
@@ -58,7 +57,11 @@ fn main() {
         None => (Board::new(), false),
     };
     let (mut ctx, mut event_loop) = ContextBuilder::new("Fog of War", "Jack Mordaunt")
-        .window_mode(WindowMode::default().dimensions(800.0, 600.0))
+        .window_mode(
+            WindowMode::default()
+                .dimensions(800.0, 600.0)
+                .resizable(true),
+        )
         .window_setup(WindowSetup::default().title("Fog of Chess"))
         .build()
         .expect("creating game loop");
@@ -85,8 +88,19 @@ impl EventHandler for Game {
         Ok(())
     }
 
+    fn key_up_event(&mut self, _ctx: &mut Context, kc: KeyCode, _keymods: KeyMods) {
+        // Toggle fog of war.
+        // Hardcoded to "F" key for now.
+        // TODO: Generalise pattern for debug-only operations.
+        if cfg!(debug_assertions) {
+            if let KeyCode::F = kc {
+                self.fog = !self.fog;
+            }
+        }
+    }
+
     fn mouse_button_up_event(&mut self, ctx: &mut Context, _b: MouseButton, x: f32, y: f32) {
-        let (w, h) = (800.0, 600.0);
+        let Rect { w, h, .. } = graphics::screen_coordinates(ctx);
         let (w_size, h_size) = (w / 8.0, h / 8.0);
         let (col, row) = ((x / w_size).floor() as i32, (y / h_size).floor() as i32);
         if is_key_pressed(ctx, KeyCode::LShift) {
@@ -130,125 +144,10 @@ impl EventHandler for Game {
     }
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
-        graphics::clear(ctx, graphics::BLACK);
-        // TODO: Get actual size of window instead of hardcoding.
-        let (w, h) = (800.0, 600.0);
-        let (w_size, h_size) = (w / 8.0, h / 8.0);
-        let mut mb = MeshBuilder::new();
-        // Draw pieces.
-        for (y, row) in self.board.0.iter().enumerate() {
-            for (x, cell) in row.iter().enumerate() {
-                if let Some(Piece { player, unit, .. }) = cell {
-                    if *player != self.turn {
-                        continue;
-                    }
-                    // Draw the current piece.
-                    if *player == self.turn {
-                        // Chess pieces are part of unicode.
-                        // All we need is a font that provides these.
-                        // let font = graphics::Font::default();
-                        let text = match unit {
-                            Unit::Pawn => '\u{265F}',
-                            Unit::King => '\u{265A}',
-                            Unit::Queen => '\u{265B}',
-                            Unit::Bishop => '\u{265D}',
-                            Unit::Knight => '\u{265E}',
-                            Unit::Rook => '\u{265C}',
-                        };
-                        let color = match player {
-                            Player::White => graphics::WHITE,
-                            Player::Black => graphics::BLACK,
-                        };
-                        let fragment: graphics::TextFragment = (text, self.font, 80.0).into();
-                        graphics::queue_text(
-                            ctx,
-                            &Text::new(fragment),
-                            // TODO: Center dynamically instead of hardcoded padding.
-                            [x as f32 * w_size + 25.0, y as f32 * h_size - 10.0],
-                            Some(color),
-                        );
-                        // Draw everything that is in line of sight of the
-                        // current piece.
-                        // TOOD: Given that all allied pieces will be drawn by
-                        // previous code we can tighten this to "draw all
-                        // enemies in line of sight".
-                        for (x, y) in self
-                            .line_of_sight((x as i32, y as i32))
-                            .into_iter()
-                            .chain(vec![(x as i32, y as i32)])
-                        {
-                            // Draw cell.
-                            let color = if x % 2 == 0 && y % 2 == 0 {
-                                SOARING_EAGLE
-                            } else if x % 2 != 0 && y % 2 != 0 {
-                                SOARING_EAGLE
-                            } else {
-                                WIZARD_GREY
-                            };
-                            mb.rectangle(
-                                graphics::DrawMode::fill(),
-                                graphics::Rect::new_i32(
-                                    x as i32 * w_size as i32,
-                                    y as i32 * h_size as i32,
-                                    w_size as i32,
-                                    h_size as i32,
-                                ),
-                                color,
-                            );
-                            // Highlight selected pieces.
-                            if self.selected.contains(&(x as i32, y as i32)) {
-                                mb.rectangle(
-                                    graphics::DrawMode::stroke(2.0),
-                                    graphics::Rect::new_i32(
-                                        x as i32 * w_size as i32 + 1,
-                                        y as i32 * h_size as i32 + 1,
-                                        w_size as i32 - 2,
-                                        h_size as i32 - 2,
-                                    ),
-                                    PURE_APPLE,
-                                );
-                            };
-                            if let Some(Piece { player, unit, .. }) =
-                                self.board.get((x as i32, y as i32))
-                            {
-                                if *player != self.turn {
-                                    let text = match unit {
-                                        Unit::Pawn => '\u{265F}',
-                                        Unit::King => '\u{265A}',
-                                        Unit::Queen => '\u{265B}',
-                                        Unit::Bishop => '\u{265D}',
-                                        Unit::Knight => '\u{265E}',
-                                        Unit::Rook => '\u{265C}',
-                                    };
-                                    let color = match player {
-                                        Player::White => graphics::WHITE,
-                                        Player::Black => graphics::BLACK,
-                                    };
-                                    let fragment: graphics::TextFragment =
-                                        (text, self.font, 80.0).into();
-                                    graphics::queue_text(
-                                        ctx,
-                                        &Text::new(fragment),
-                                        // TODO: Center dynamically instead of hardcoded padding.
-                                        [x as f32 * w_size + 25.0, y as f32 * h_size - 10.0],
-                                        Some(color),
-                                    );
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+        match self.fog {
+            true => self.draw_fog(ctx),
+            false => self.draw_no_fog(ctx),
         }
-        let mut mesh = mb.build(ctx)?;
-        graphics::draw(ctx, &mut mesh, DrawParam::default())?;
-        graphics::draw_queued_text(
-            ctx,
-            DrawParam::default(),
-            None,
-            graphics::FilterMode::Linear,
-        )?;
-        graphics::present(ctx)
     }
 }
 
@@ -536,6 +435,172 @@ impl Game {
             for (from, to) in moves {
                 self.board.move_piece(from, to);
             }
+        }
+    }
+    // Draw without fog of war.
+    fn draw_no_fog(&mut self, ctx: &mut Context) -> GameResult<()> {
+        graphics::clear(ctx, graphics::BLACK);
+        // TODO: Get actual size of window instead of hardcoding.
+        let Rect { w, h, .. } = graphics::screen_coordinates(ctx);
+        let (w_size, h_size) = (w / 8.0, h / 8.0);
+        let mut mb = MeshBuilder::new();
+        // Draw pieces.
+        for (y, row) in self.board.0.iter().enumerate() {
+            for (x, _cell) in row.iter().enumerate() {
+                // Draw cell.
+                // Checkered colors.
+                {
+                    let color = if x % 2 == 0 && y % 2 == 0 {
+                        SOARING_EAGLE
+                    } else if x % 2 != 0 && y % 2 != 0 {
+                        SOARING_EAGLE
+                    } else {
+                        WIZARD_GREY
+                    };
+                    mb.rectangle(
+                        graphics::DrawMode::fill(),
+                        graphics::Rect::new_i32(
+                            x as i32 * w_size as i32,
+                            y as i32 * h_size as i32,
+                            w_size as i32,
+                            h_size as i32,
+                        ),
+                        color,
+                    );
+                }
+                // Highlight if selected.
+                {
+                    if self.selected.contains(&(x as i32, y as i32)) {
+                        mb.rectangle(
+                            graphics::DrawMode::stroke(2.0),
+                            graphics::Rect::new_i32(
+                                x as i32 * w_size as i32 + 1,
+                                y as i32 * h_size as i32 + 1,
+                                w_size as i32 - 2,
+                                h_size as i32 - 2,
+                            ),
+                            PURE_APPLE,
+                        );
+                    };
+                }
+                self.draw_piece(ctx, (x as i32, y as i32));
+            }
+        }
+        let mut mesh = mb.build(ctx)?;
+        graphics::draw(ctx, &mut mesh, DrawParam::default())?;
+        graphics::draw_queued_text(
+            ctx,
+            DrawParam::default(),
+            None,
+            graphics::FilterMode::Linear,
+        )?;
+        graphics::present(ctx)
+    }
+    // Draw with fog of war.
+    fn draw_fog(&mut self, ctx: &mut Context) -> GameResult<()> {
+        graphics::clear(ctx, graphics::BLACK);
+        let Rect { w, h, .. } = graphics::screen_coordinates(ctx);
+        let (w_size, h_size) = (w / 8.0, h / 8.0);
+        let mut mb = MeshBuilder::new();
+        for (y, row) in self.board.0.iter().enumerate() {
+            for (x, cell) in row.iter().enumerate() {
+                if let Some(Piece { player, .. }) = cell {
+                    if self.fog && *player != self.turn {
+                        continue;
+                    }
+                    // Draw the current piece.
+                    if *player == self.turn {
+                        self.draw_piece(ctx, (x as i32, y as i32));
+                        // Draw everything that is in line of sight of the
+                        // current piece.
+                        for (x, y) in self
+                            .line_of_sight((x as i32, y as i32))
+                            .into_iter()
+                            .chain(vec![(x as i32, y as i32)])
+                        {
+                            // Draw cell.
+                            // Checkered colors.
+                            {
+                                let color = if x % 2 == 0 && y % 2 == 0 {
+                                    SOARING_EAGLE
+                                } else if x % 2 != 0 && y % 2 != 0 {
+                                    SOARING_EAGLE
+                                } else {
+                                    WIZARD_GREY
+                                };
+                                mb.rectangle(
+                                    graphics::DrawMode::fill(),
+                                    graphics::Rect::new_i32(
+                                        x as i32 * w_size as i32,
+                                        y as i32 * h_size as i32,
+                                        w_size as i32,
+                                        h_size as i32,
+                                    ),
+                                    color,
+                                );
+                            }
+                            // Highlight selected pieces.
+                            {
+                                if self.selected.contains(&(x as i32, y as i32)) {
+                                    mb.rectangle(
+                                        graphics::DrawMode::stroke(2.0),
+                                        graphics::Rect::new_i32(
+                                            x as i32 * w_size as i32 + 1,
+                                            y as i32 * h_size as i32 + 1,
+                                            w_size as i32 - 2,
+                                            h_size as i32 - 2,
+                                        ),
+                                        PURE_APPLE,
+                                    );
+                                };
+                            }
+                            // Draw the enemy piece.
+                            if self.turn != *player {
+                                self.draw_piece(ctx, (x as i32, y as i32));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let mut mesh = mb.build(ctx)?;
+        graphics::draw(ctx, &mut mesh, DrawParam::default())?;
+        graphics::draw_queued_text(
+            ctx,
+            DrawParam::default(),
+            None,
+            graphics::FilterMode::Linear,
+        )?;
+        graphics::present(ctx)
+    }
+    // Draw a single piece based on location.
+    fn draw_piece(&self, ctx: &mut Context, pos: (i32, i32)) {
+        let (x, y) = pos;
+        let Rect { w, h, .. } = graphics::screen_coordinates(ctx);
+        let (w_size, h_size) = (w / 8.0, h / 8.0);
+        if let Some(Piece { player, unit, .. }) = self.board.get((x, y)) {
+            // Chess pieces are part of unicode.
+            // All we need is a font that provides these.
+            let text = match unit {
+                Unit::Pawn => '\u{265F}',
+                Unit::King => '\u{265A}',
+                Unit::Queen => '\u{265B}',
+                Unit::Bishop => '\u{265D}',
+                Unit::Knight => '\u{265E}',
+                Unit::Rook => '\u{265C}',
+            };
+            let color = match player {
+                Player::White => graphics::WHITE,
+                Player::Black => graphics::BLACK,
+            };
+            let fragment: graphics::TextFragment = (text, self.font, 80.0).into();
+            graphics::queue_text(
+                ctx,
+                &Text::new(fragment),
+                // TODO: Center dynamically instead of hardcoded padding.
+                [x as f32 * w_size + 25.0, y as f32 * h_size - 10.0],
+                Some(color),
+            );
         }
     }
 }
