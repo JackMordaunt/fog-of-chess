@@ -94,12 +94,11 @@ impl EventHandler for Game {
                 // BUG: Avoid duplicates.
                 self.selected.push((col, row));
             }
-            println!("selection: {:?}", self.selected);
         } else {
             match self.board.get((col, row)) {
                 // Move.
                 None => {
-                    // Multi selection is a compound move.
+                    // Multi selection is a potential compound move.
                     // Given the only compound move in standard chess is the
                     // "castle", we directly call into it.
                     if self.selected.len() > 1 {
@@ -506,31 +505,36 @@ impl Game {
     /// - Neither piece has been moved.
     /// - Nothing is in the two spaces between them.
     fn castle_move(&mut self) {
-        let pieces = self.selected.iter().take(2).collect::<Vec<&(i32, i32)>>();
-        // Vec of two pieces must be a Rook and King.
-        // This tests that both pieces are either Rook or King.
-        // BUG: Will accept two Rooks or Kings which is nonesensical.
-        let valid = pieces
+        let moves = self
+            .selected
             .iter()
-            .fold(true, |valid, next| match self.board.get(**next) {
-                Some(Piece {
-                    unit: Unit::Rook, ..
-                }) => true && valid,
-                Some(Piece {
-                    unit: Unit::King, ..
-                }) => true && valid,
-                _ => false,
-            });
-        if valid {
-            // TODO: Validate.
-            // - Original positions
-            // - Empty between them
-            // - [x] Distance of two
-            // - Direction based on player.
-            let (left, right) = (*pieces[0], *pieces[1]);
-            if (left.0 - right.0).abs() - 1 == 2 {
-                self.board.move_piece(left, (left.0 + 2, left.1));
-                self.board.move_piece(right, (right.0 - 2, right.1));
+            .take(2)
+            .filter_map(|pos| match self.board.get(*pos).cloned() {
+                Some(piece) => Some((pos, piece)),
+                None => None,
+            })
+            .filter_map(|(pos, piece)| {
+                // Direction is derived from standard chess layout,
+                // where Rook is 3 positions to the left of the King.
+                let projected_move = match piece {
+                    Piece {
+                        unit: Unit::Rook, ..
+                    } => (pos.0 + 2, pos.1),
+                    Piece {
+                        unit: Unit::King, ..
+                    } => (pos.0 - 2, pos.1),
+                    _ => return None,
+                };
+                if piece.moved > 0 || self.board.get(projected_move).is_some() {
+                    None
+                } else {
+                    Some((*pos, projected_move))
+                }
+            })
+            .collect::<Vec<((i32, i32), (i32, i32))>>();
+        if moves.len() == 2 {
+            for (from, to) in moves {
+                self.board.move_piece(from, to);
             }
         }
     }
