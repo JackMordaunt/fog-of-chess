@@ -27,4 +27,4 @@ cargo run --release
 
 ## Backlog
 
-- [ ] Auto-center pieces.
+- [x] Auto-center pieces.
