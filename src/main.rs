@@ -1,9 +1,9 @@
-// #![windows_subsystem = "windows"]
+#![windows_subsystem = "windows"]
 
 use clap::{App, Arg, SubCommand};
 use derive_builder::*;
 use ggez::event::{self, EventHandler};
-use ggez::graphics::{self, Color, DrawParam, Font, MeshBuilder, Rect, Text};
+use ggez::graphics::{self, Color, DrawMode, DrawParam, Font, MeshBuilder, Rect, Text};
 use ggez::input::keyboard::{is_key_pressed, KeyCode, KeyMods};
 use ggez::input::mouse::MouseButton;
 use ggez::{conf::WindowMode, conf::WindowSetup};
@@ -38,6 +38,12 @@ fn main() {
                 .long("no-fog")
                 .help("Turn off the fog of war."),
         )
+        .arg(
+            Arg::with_name("debug-stats")
+                .takes_value(false)
+                .long("debug-stats")
+                .help("Show useful information for debugging."),
+        )
         .subcommand(
             SubCommand::with_name("test").arg(
                 Arg::with_name("scenario")
@@ -56,10 +62,11 @@ fn main() {
         },
         None => (Board::new(), false),
     };
+    let (width, height) = (800.0, 800.0);
     let (mut ctx, mut event_loop) = ContextBuilder::new("Fog of War", "Jack Mordaunt")
         .window_mode(
             WindowMode::default()
-                .dimensions(800.0, 600.0)
+                .dimensions(width, height)
                 .resizable(true),
         )
         .window_setup(WindowSetup::default().title("Fog of Chess"))
@@ -75,6 +82,7 @@ fn main() {
             Font::new_glyph_font_bytes(&mut ctx, include_bytes!("../res/DejaVuSansMono.ttf"))
                 .expect("loading font"),
         )
+        .debug_stats(app.is_present("debug-stats"))
         .build()
         .expect("building game object");
     match event::run(&mut ctx, &mut event_loop, &mut g) {
@@ -89,19 +97,17 @@ impl EventHandler for Game {
     }
 
     fn key_up_event(&mut self, _ctx: &mut Context, kc: KeyCode, _keymods: KeyMods) {
-        // Toggle fog of war.
-        // Hardcoded to "F" key for now.
-        // TODO: Generalise pattern for debug-only operations.
         if cfg!(debug_assertions) {
-            if let KeyCode::F = kc {
-                self.fog = !self.fog;
-            }
+            match kc {
+                KeyCode::F => self.fog = !self.fog,
+                KeyCode::F3 => self.debug_stats = !self.debug_stats,
+                _ => {}
+            };
         }
     }
 
     fn mouse_button_up_event(&mut self, ctx: &mut Context, _b: MouseButton, x: f32, y: f32) {
-        let Rect { w, h, .. } = graphics::screen_coordinates(ctx);
-        let (w_size, h_size) = (w / 8.0, h / 8.0);
+        let (w_size, h_size) = self.cell_size(ctx);
         let (col, row) = ((x / w_size).floor() as i32, (y / h_size).floor() as i32);
         if is_key_pressed(ctx, KeyCode::LShift) {
             if self.contains_ally((col, row)) {
@@ -144,10 +150,27 @@ impl EventHandler for Game {
     }
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
-        match self.fog {
-            true => self.draw_fog(ctx),
-            false => self.draw_no_fog(ctx),
+        self.draw_board(ctx)?;
+        self.draw_pieces(ctx)?;
+        self.draw_highlights(ctx)?;
+        if self.fog {
+            self.draw_fog(ctx)?;
         }
+        if self.debug_stats {
+            self.draw_debug_stats(ctx)?;
+        }
+        graphics::draw_queued_text(
+            ctx,
+            DrawParam::default(),
+            None,
+            graphics::FilterMode::Linear,
+        )?;
+        graphics::present(ctx)
+    }
+
+    fn resize_event(&mut self, ctx: &mut Context, width: f32, height: f32) {
+        graphics::set_screen_coordinates(ctx, Rect::new(0.0, 0.0, width, height))
+            .expect("graphics::set_screen_coordinates");
     }
 }
 
@@ -192,6 +215,7 @@ pub struct Game {
     pub font: graphics::Font,
     pub fog: bool,
     pub single_player: bool,
+    pub debug_stats: bool,
 }
 
 impl Game {
@@ -437,171 +461,180 @@ impl Game {
             }
         }
     }
-    // Draw without fog of war.
-    fn draw_no_fog(&mut self, ctx: &mut Context) -> GameResult<()> {
-        graphics::clear(ctx, graphics::BLACK);
-        // TODO: Get actual size of window instead of hardcoding.
-        let Rect { w, h, .. } = graphics::screen_coordinates(ctx);
-        let (w_size, h_size) = (w / 8.0, h / 8.0);
+    /// Draw the board which the pieces are placed onto.
+    fn draw_board(&self, ctx: &mut Context) -> GameResult<()> {
+        let (w, h) = self.cell_size(ctx);
         let mut mb = MeshBuilder::new();
-        // Draw pieces.
-        for (y, row) in self.board.0.iter().enumerate() {
-            for (x, _cell) in row.iter().enumerate() {
-                // Draw cell.
-                // Checkered colors.
-                {
-                    let color = if x % 2 == 0 && y % 2 == 0 {
-                        SOARING_EAGLE
-                    } else if x % 2 != 0 && y % 2 != 0 {
-                        SOARING_EAGLE
-                    } else {
-                        WIZARD_GREY
-                    };
-                    mb.rectangle(
-                        graphics::DrawMode::fill(),
-                        graphics::Rect::new_i32(
-                            x as i32 * w_size as i32,
-                            y as i32 * h_size as i32,
-                            w_size as i32,
-                            h_size as i32,
-                        ),
-                        color,
-                    );
-                }
-                // Highlight if selected.
-                {
-                    if self.selected.contains(&(x as i32, y as i32)) {
-                        mb.rectangle(
-                            graphics::DrawMode::stroke(2.0),
-                            graphics::Rect::new_i32(
-                                x as i32 * w_size as i32 + 1,
-                                y as i32 * h_size as i32 + 1,
-                                w_size as i32 - 2,
-                                h_size as i32 - 2,
-                            ),
-                            PURE_APPLE,
-                        );
-                    };
-                }
-                self.draw_piece(ctx, (x as i32, y as i32));
-            }
-        }
-        let mut mesh = mb.build(ctx)?;
-        graphics::draw(ctx, &mut mesh, DrawParam::default())?;
-        graphics::draw_queued_text(
-            ctx,
-            DrawParam::default(),
-            None,
-            graphics::FilterMode::Linear,
-        )?;
-        graphics::present(ctx)
-    }
-    // Draw with fog of war.
-    fn draw_fog(&mut self, ctx: &mut Context) -> GameResult<()> {
-        graphics::clear(ctx, graphics::BLACK);
-        let Rect { w, h, .. } = graphics::screen_coordinates(ctx);
-        let (w_size, h_size) = (w / 8.0, h / 8.0);
-        let mut mb = MeshBuilder::new();
-        for (y, row) in self.board.0.iter().enumerate() {
-            for (x, cell) in row.iter().enumerate() {
-                if let Some(Piece { player, .. }) = cell {
-                    if self.fog && *player != self.turn {
-                        continue;
-                    }
-                    // Draw the current piece.
-                    if *player == self.turn {
-                        self.draw_piece(ctx, (x as i32, y as i32));
-                        // Draw everything that is in line of sight of the
-                        // current piece.
-                        for (x, y) in self
-                            .line_of_sight((x as i32, y as i32))
-                            .into_iter()
-                            .chain(vec![(x as i32, y as i32)])
-                        {
-                            // Draw cell.
-                            // Checkered colors.
-                            {
-                                let color = if x % 2 == 0 && y % 2 == 0 {
-                                    SOARING_EAGLE
-                                } else if x % 2 != 0 && y % 2 != 0 {
-                                    SOARING_EAGLE
-                                } else {
-                                    WIZARD_GREY
-                                };
-                                mb.rectangle(
-                                    graphics::DrawMode::fill(),
-                                    graphics::Rect::new_i32(
-                                        x as i32 * w_size as i32,
-                                        y as i32 * h_size as i32,
-                                        w_size as i32,
-                                        h_size as i32,
-                                    ),
-                                    color,
-                                );
-                            }
-                            // Highlight selected pieces.
-                            {
-                                if self.selected.contains(&(x as i32, y as i32)) {
-                                    mb.rectangle(
-                                        graphics::DrawMode::stroke(2.0),
-                                        graphics::Rect::new_i32(
-                                            x as i32 * w_size as i32 + 1,
-                                            y as i32 * h_size as i32 + 1,
-                                            w_size as i32 - 2,
-                                            h_size as i32 - 2,
-                                        ),
-                                        PURE_APPLE,
-                                    );
-                                };
-                            }
-                            // Draw the enemy piece.
-                            if self.turn != *player {
-                                self.draw_piece(ctx, (x as i32, y as i32));
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        let mut mesh = mb.build(ctx)?;
-        graphics::draw(ctx, &mut mesh, DrawParam::default())?;
-        graphics::draw_queued_text(
-            ctx,
-            DrawParam::default(),
-            None,
-            graphics::FilterMode::Linear,
-        )?;
-        graphics::present(ctx)
-    }
-    // Draw a single piece based on location.
-    fn draw_piece(&self, ctx: &mut Context, pos: (i32, i32)) {
-        let (x, y) = pos;
-        let Rect { w, h, .. } = graphics::screen_coordinates(ctx);
-        let (w_size, h_size) = (w / 8.0, h / 8.0);
-        if let Some(Piece { player, unit, .. }) = self.board.get((x, y)) {
-            // Chess pieces are part of unicode.
-            // All we need is a font that provides these.
-            let text = match unit {
-                Unit::Pawn => '\u{265F}',
-                Unit::King => '\u{265A}',
-                Unit::Queen => '\u{265B}',
-                Unit::Bishop => '\u{265D}',
-                Unit::Knight => '\u{265E}',
-                Unit::Rook => '\u{265C}',
+        for Position { x, y, .. } in self.board.iter() {
+            let (x, y) = (x as i32, y as i32);
+            // TODO: get color from color map.
+            let color = if x % 2 == 0 && y % 2 == 0 {
+                SOARING_EAGLE
+            } else if x % 2 != 0 && y % 2 != 0 {
+                SOARING_EAGLE
+            } else {
+                WIZARD_GREY
             };
-            let color = match player {
-                Player::White => graphics::WHITE,
-                Player::Black => graphics::BLACK,
-            };
-            let fragment: graphics::TextFragment = (text, self.font, 80.0).into();
-            graphics::queue_text(
-                ctx,
-                &Text::new(fragment),
-                // TODO: Center dynamically instead of hardcoded padding.
-                [x as f32 * w_size + 25.0, y as f32 * h_size - 10.0],
-                Some(color),
+            let (x, y) = (x as f32, y as f32);
+            mb.rectangle(
+                graphics::DrawMode::fill(),
+                graphics::Rect::new(x * w, y * h, w, h),
+                color,
             );
         }
+        let mut mesh = mb.build(ctx)?;
+        graphics::draw(ctx, &mut mesh, DrawParam::default())
+    }
+    // Draw the chess pieces onto the baord.
+    fn draw_pieces(&self, ctx: &mut Context) -> GameResult<()> {
+        let (w, h) = self.cell_size(ctx);
+        let size = w.min(h);
+        for Position { x, y, piece } in self.board.iter() {
+            if let Some(Piece { player, unit, .. }) = piece {
+                // Chess pieces are part of unicode.
+                // All we need is a font that provides these.
+                let text = match unit {
+                    Unit::Pawn => '\u{265F}',
+                    Unit::King => '\u{265A}',
+                    Unit::Queen => '\u{265B}',
+                    Unit::Bishop => '\u{265D}',
+                    Unit::Knight => '\u{265E}',
+                    Unit::Rook => '\u{265C}',
+                };
+                let color = match player {
+                    Player::White => graphics::WHITE,
+                    Player::Black => graphics::BLACK,
+                };
+                // In order to center the pieces there are a few tricks to do.
+                // First, scale the text by the larger side to "fill out" the space.
+                // Then queue and draw the text immediately, centering the text horizontally.
+                // The fixed offset of -2.0 is required to counteract 1px borders (I think!).
+                // The text must be drawn individually so that we can scale each fragment individually.
+                let fragment: graphics::TextFragment = (text, self.font, size).into();
+                graphics::queue_text(ctx, &Text::new(fragment), [0.0, 0.0], Some(color));
+                let scale = if h > w {
+                    [1.0, h / w]
+                } else if w > h {
+                    [w / h, 1.0]
+                } else {
+                    [1.0, 1.0]
+                };
+                graphics::draw_queued_text(
+                    ctx,
+                    DrawParam::default()
+                        .dest([x as f32 * w + (w / 4.0 - 2.0), y as f32 * h])
+                        .scale(scale),
+                    None,
+                    graphics::FilterMode::Linear,
+                )?;
+            }
+        }
+        Ok(())
+    }
+    // Draw highlights for selected pieces.
+    fn draw_highlights(&self, ctx: &mut Context) -> GameResult<()> {
+        let mut mb = MeshBuilder::new();
+        let (w, h) = self.cell_size(ctx);
+        for (x, y) in self.selected.iter() {
+            let (x, y) = (*x as f32, *y as f32);
+            mb.rectangle(
+                DrawMode::stroke(2.0),
+                Rect::new(x * w, y * h, w, h),
+                PURE_APPLE,
+            );
+        }
+        if let Ok(mut mesh) = mb.build(ctx) {
+            graphics::draw(ctx, &mut mesh, DrawParam::default())?;
+        }
+        Ok(())
+    }
+    // Draw the fog over war over the enemy pieces.
+    fn draw_fog(&self, ctx: &mut Context) -> GameResult<()> {
+        #[derive(Copy, Clone)]
+        enum Visibility {
+            Fog,
+            Clear,
+        }
+        let mut mask = [[Visibility::Fog; 8]; 8];
+        let mut mb = MeshBuilder::new();
+        let (w, h) = self.cell_size(ctx);
+        for Position { x, y, piece } in self.board.iter() {
+            if let Some(Piece { player, .. }) = piece {
+                if self.is_enemy(player) {
+                    continue;
+                }
+                let (x, y) = (x as i32, y as i32);
+                for (x, y) in self.line_of_sight((x, y)).into_iter().chain(vec![(x, y)]) {
+                    // TODO: Better way to handle these bounds checks?
+                    // 1. Let trait define valid usize.
+                    // 2. Let board size be dynamic.
+                    if y >= 0 && x >= 0 && y < 8 && x < 8 {
+                        mask[y as usize][x as usize] = Visibility::Clear;
+                    }
+                }
+            }
+        }
+        for (y, row) in mask.iter().enumerate() {
+            for (x, visibility) in row.iter().enumerate() {
+                if let Visibility::Fog = visibility {
+                    let (x, y) = (x as f32, y as f32);
+                    mb.rectangle(
+                        graphics::DrawMode::fill(),
+                        graphics::Rect::new(x * w, y * h, w, h),
+                        graphics::BLACK,
+                    );
+                }
+            }
+        }
+        let mut mesh = mb.build(ctx)?;
+        graphics::draw(ctx, &mut mesh, DrawParam::default())
+    }
+    // Draw meta information useful for debugging.
+    fn draw_debug_stats(&self, ctx: &mut Context) -> GameResult<()> {
+        let (text_size, padding) = (20.0, 5.0);
+        let (width, height) = graphics::size(ctx);
+        let (w, h) = self.cell_size(ctx);
+        let stats = vec![
+            format!("window: {} x {}", width, height),
+            format!("  cell: {} x {}", w, h),
+        ];
+        for (ii, stat) in stats.iter().enumerate() {
+            self.text(
+                ctx,
+                stat,
+                (10.0, ii as f32 * text_size + padding),
+                text_size,
+                None,
+            );
+        }
+        Ok(())
+    }
+    fn is_enemy(&self, player: &Player) -> bool {
+        self.turn != *player
+    }
+    fn is_ally(&self, player: &Player) -> bool {
+        self.turn == *player
+    }
+    // Calculate cell size based on window size (width, height).
+    fn cell_size(&self, ctx: &mut Context) -> (f32, f32) {
+        let (w, h) = graphics::drawable_size(ctx);
+        ((w / 8.0), (h / 8.0))
+    }
+    fn text(
+        &self,
+        ctx: &mut Context,
+        text: &str,
+        coord: (f32, f32),
+        scale: f32,
+        color: Option<Color>,
+    ) {
+        let fragment: graphics::TextFragment = (text, self.font, scale).into();
+        graphics::queue_text(
+            ctx,
+            &Text::new(fragment),
+            [coord.0, coord.1],
+            color.or(Some(graphics::BLACK)),
+        );
     }
 }
 
@@ -868,6 +901,12 @@ impl Board {
             );
         }
     }
+    fn iter(&self) -> BoardIter {
+        BoardIter {
+            pos: None,
+            board: self,
+        }
+    }
 }
 
 // LineOfSight yields coordinates from a move-set until a piece is found.
@@ -913,6 +952,52 @@ where
                 None => Some((x, y)),
             },
             None => None,
+        }
+    }
+}
+
+/// Position is a coordinate on the board, potentially containing a piece.
+struct Position<'a> {
+    piece: Option<&'a Piece>,
+    x: usize,
+    y: usize,
+}
+
+/// Iterate over a chess board, left to right.
+struct BoardIter<'a> {
+    pos: Option<(usize, usize)>,
+    board: &'a Board,
+}
+
+impl<'a> Iterator for BoardIter<'a> {
+    type Item = Position<'a>;
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some((x, y)) = self.pos.as_mut() {
+            *x += 1;
+            if *x > 7 {
+                *x = 0;
+                *y += 1;
+            }
+            if *y > 7 {
+                return None;
+            }
+        } else {
+            self.pos = Some((0, 0));
+        }
+        if let Some((x, y)) = self.pos {
+            match self.board.0.get(y) {
+                Some(cell) => match cell.get(x) {
+                    Some(piece) => Some(Position {
+                        piece: piece.as_ref(),
+                        x,
+                        y,
+                    }),
+                    None => None,
+                },
+                None => None,
+            }
+        } else {
+            None
         }
     }
 }
