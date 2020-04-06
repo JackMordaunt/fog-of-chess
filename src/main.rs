@@ -8,6 +8,7 @@ use ggez::input::keyboard::{is_key_pressed, KeyCode, KeyMods};
 use ggez::input::mouse::MouseButton;
 use ggez::{conf::WindowMode, conf::WindowSetup};
 use ggez::{Context, ContextBuilder, GameResult};
+use std::collections::HashSet;
 
 const PURE_APPLE: Color = Color {
     r: 106.0 / 256.0,
@@ -72,11 +73,11 @@ fn main() {
         .window_setup(WindowSetup::default().title("Fog of Chess"))
         .build()
         .expect("creating game loop");
-    let mut g = GameBuilder::default()
+    let state = StateBuilder::default()
         .board(board)
         .single_player(single_player)
         .fog(!app.is_present("no-fog"))
-        .selected(vec![])
+        .selected(HashSet::new())
         .turn(Player::White)
         .font(
             Font::new_glyph_font_bytes(&mut ctx, include_bytes!("../res/DejaVuSansMono.ttf"))
@@ -85,7 +86,14 @@ fn main() {
         .debug_stats(app.is_present("debug-stats"))
         .build()
         .expect("building game object");
-    match event::run(&mut ctx, &mut event_loop, &mut g) {
+    match event::run(
+        &mut ctx,
+        &mut event_loop,
+        &mut Game {
+            state: state.clone(),
+            initial: state.clone(),
+        },
+    ) {
         Ok(_) => {}
         Err(e) => println!("error: {}", e),
     }
@@ -99,49 +107,46 @@ impl EventHandler for Game {
     fn key_up_event(&mut self, _ctx: &mut Context, kc: KeyCode, _keymods: KeyMods) {
         if cfg!(debug_assertions) {
             match kc {
-                KeyCode::F => self.fog = !self.fog,
-                KeyCode::F3 => self.debug_stats = !self.debug_stats,
+                KeyCode::F => self.state.fog = !self.state.fog,
+                KeyCode::F3 => self.state.debug_stats = !self.state.debug_stats,
+                KeyCode::R => self.state = self.initial.clone(),
                 _ => {}
             };
         }
     }
 
     fn mouse_button_up_event(&mut self, ctx: &mut Context, _b: MouseButton, x: f32, y: f32) {
-        let (w_size, h_size) = self.cell_size(ctx);
-        let (col, row) = ((x / w_size).floor() as i32, (y / h_size).floor() as i32);
+        let (col, row) = self.pixels_to_grid(ctx, (x, y));
         if is_key_pressed(ctx, KeyCode::LShift) {
             if self.contains_ally((col, row)) {
                 // BUG: Avoid duplicates.
-                self.selected.push((col, row));
+                self.state.selected.insert((col, row));
             }
         } else {
-            match self.board.get((col, row)) {
-                // Move.
+            match self.state.board.get((col, row)) {
                 None => {
                     // Multi selection is a potential compound move.
                     // Given the only compound move in standard chess is the
                     // "castle", we directly call into it.
-                    if self.selected.len() > 1 {
-                        self.castle_move()
+                    if self.state.selected.len() > 1 {
+                        self.castle_move();
                     } else {
-                        if let Some((x, y)) = self.first_selected() {
+                        if let Some((x, y)) = self.state.selected.iter().next().cloned() {
                             if self.moves((x, y)).contains(&(col, row)) {
                                 self.move_turn((x, y), (col, row));
                             }
                         }
                     }
                 }
-                // Attack move.
                 Some(Piece { player, .. }) => {
-                    if *player != self.turn && self.selected.len() == 1 {
-                        if let Some((x, y)) = self.first_selected() {
-                            if self.moves((x, y)).contains(&(col, row)) {
-                                self.move_turn((x, y), (col, row));
-                            }
+                    if self.is_enemy(player) && self.state.selected.len() == 1 {
+                        if let Some((x, y)) = self.state.selected.iter().next().cloned() {
+                            self.attack_move((x, y), (col, row));
                         }
                     } else {
                         if self.contains_ally((col, row)) {
-                            self.selected = vec![(col as i32, row as i32)];
+                            self.state.selected.clear();
+                            self.state.selected.insert((col, row));
                         }
                     }
                 }
@@ -153,10 +158,10 @@ impl EventHandler for Game {
         self.draw_board(ctx)?;
         self.draw_pieces(ctx)?;
         self.draw_highlights(ctx)?;
-        if self.fog {
+        if self.state.fog {
             self.draw_fog(ctx)?;
         }
-        if self.debug_stats {
+        if self.state.debug_stats {
             self.draw_debug_stats(ctx)?;
         }
         graphics::draw_queued_text(
@@ -206,12 +211,18 @@ pub struct Piece {
 pub struct Board([[Option<Piece>; 8]; 8]);
 
 /// Game contains meta information.
-#[derive(Clone, Builder)]
+#[derive(Clone)]
 pub struct Game {
+    pub initial: State,
+    pub state: State,
+}
+
+#[derive(Clone, Builder)]
+pub struct State {
     pub board: Board,
     pub turn: Player,
     // TODO: Use a set to avoid duplicates.
-    pub selected: Vec<(i32, i32)>,
+    pub selected: HashSet<(i32, i32)>,
     pub font: graphics::Font,
     pub fog: bool,
     pub single_player: bool,
@@ -223,7 +234,7 @@ impl Game {
     pub fn moves(&self, pos: (i32, i32)) -> Vec<(i32, i32)> {
         let (x, y) = pos;
         use Unit::*;
-        match self.board.get((x, y)) {
+        match self.state.board.get((x, y)) {
             Some(Piece {
                 unit,
                 player,
@@ -246,9 +257,10 @@ impl Game {
                             if self.contains_enemy((x + 1, y + 1)) {
                                 moves.push((x + 1, y + 1));
                             }
-                            if self.board.0[y as usize + 1][x as usize].is_none() {
+                            if self.state.board.0[y as usize + 1][x as usize].is_none() {
                                 moves.push((x, y + 1));
-                                if *moved == 0 && self.board.0[y as usize + 2][x as usize].is_none()
+                                if *moved == 0
+                                    && self.state.board.0[y as usize + 2][x as usize].is_none()
                                 {
                                     moves.push((x, y + 2));
                                 }
@@ -261,9 +273,10 @@ impl Game {
                             if self.contains_enemy((x + 1, y - 1)) {
                                 moves.push((x + 1, y - 1));
                             }
-                            if self.board.0[y as usize - 1][x as usize].is_none() {
+                            if self.state.board.0[y as usize - 1][x as usize].is_none() {
                                 moves.push((x, y - 1));
-                                if *moved == 0 && self.board.0[y as usize - 2][x as usize].is_none()
+                                if *moved == 0
+                                    && self.state.board.0[y as usize - 2][x as usize].is_none()
                                 {
                                     moves.push((x, y - 2));
                                 }
@@ -286,53 +299,77 @@ impl Game {
                 // Rook moves in all non diagonal directions.
                 Rook => vec![]
                     .into_iter()
-                    .chain(LineOfSight::new((1..8).map(|ii| (x + ii, y)), &self.board))
-                    .chain(LineOfSight::new((1..8).map(|ii| (x - ii, y)), &self.board))
-                    .chain(LineOfSight::new((1..8).map(|ii| (x, y + ii)), &self.board))
-                    .chain(LineOfSight::new((1..8).map(|ii| (x, y - ii)), &self.board))
+                    .chain(LineOfSight::new(
+                        (1..8).map(|ii| (x + ii, y)),
+                        &self.state.board,
+                    ))
+                    .chain(LineOfSight::new(
+                        (1..8).map(|ii| (x - ii, y)),
+                        &self.state.board,
+                    ))
+                    .chain(LineOfSight::new(
+                        (1..8).map(|ii| (x, y + ii)),
+                        &self.state.board,
+                    ))
+                    .chain(LineOfSight::new(
+                        (1..8).map(|ii| (x, y - ii)),
+                        &self.state.board,
+                    ))
                     .collect(),
                 // Bishop moves all diagonal directions.
                 Bishop => vec![]
                     .into_iter()
                     .chain(LineOfSight::new(
                         (1..8).map(|ii| (x + ii, y + ii)),
-                        &self.board,
+                        &self.state.board,
                     ))
                     .chain(LineOfSight::new(
                         (1..8).map(|ii| (x - ii, y - ii)),
-                        &self.board,
+                        &self.state.board,
                     ))
                     .chain(LineOfSight::new(
                         (1..8).map(|ii| (x - ii, y + ii)),
-                        &self.board,
+                        &self.state.board,
                     ))
                     .chain(LineOfSight::new(
                         (1..8).map(|ii| (x + ii, y - ii)),
-                        &self.board,
+                        &self.state.board,
                     ))
                     .collect(),
                 // Queen moves in all eight directions.
                 Queen => vec![]
                     .into_iter()
-                    .chain(LineOfSight::new((1..8).map(|ii| (x + ii, y)), &self.board))
-                    .chain(LineOfSight::new((1..8).map(|ii| (x - ii, y)), &self.board))
-                    .chain(LineOfSight::new((1..8).map(|ii| (x, y + ii)), &self.board))
-                    .chain(LineOfSight::new((1..8).map(|ii| (x, y - ii)), &self.board))
+                    .chain(LineOfSight::new(
+                        (1..8).map(|ii| (x + ii, y)),
+                        &self.state.board,
+                    ))
+                    .chain(LineOfSight::new(
+                        (1..8).map(|ii| (x - ii, y)),
+                        &self.state.board,
+                    ))
+                    .chain(LineOfSight::new(
+                        (1..8).map(|ii| (x, y + ii)),
+                        &self.state.board,
+                    ))
+                    .chain(LineOfSight::new(
+                        (1..8).map(|ii| (x, y - ii)),
+                        &self.state.board,
+                    ))
                     .chain(LineOfSight::new(
                         (1..8).map(|ii| (x + ii, y + ii)),
-                        &self.board,
+                        &self.state.board,
                     ))
                     .chain(LineOfSight::new(
                         (1..8).map(|ii| (x - ii, y - ii)),
-                        &self.board,
+                        &self.state.board,
                     ))
                     .chain(LineOfSight::new(
                         (1..8).map(|ii| (x - ii, y + ii)),
-                        &self.board,
+                        &self.state.board,
                     ))
                     .chain(LineOfSight::new(
                         (1..8).map(|ii| (x + ii, y - ii)),
-                        &self.board,
+                        &self.state.board,
                     ))
                     .collect(),
                 // King can move to any adjacent cell that isn't occupied by
@@ -377,14 +414,20 @@ impl Game {
     /// Move a piece and conclude the turn.
     pub fn move_turn(&mut self, from: (i32, i32), to: (i32, i32)) {
         if self.contains_ally(from) {
-            self.board.move_piece((from.0, from.1), (to.0, to.1));
-            if !self.single_player {
-                self.turn = match self.turn {
+            self.state.board.move_piece((from.0, from.1), (to.0, to.1));
+            if !self.state.single_player {
+                self.state.turn = match self.state.turn {
                     Player::Black => Player::White,
                     Player::White => Player::Black,
                 };
             }
-            self.selected = vec![];
+            self.state.selected.clear();
+        }
+    }
+    /// Attack move one piece onto another.
+    pub fn attack_move(&mut self, from: (i32, i32), to: (i32, i32)) {
+        if self.moves((from.0, from.1)).contains(&(to.0, to.1)) {
+            self.move_turn((from.0, from.1), (to.0, to.1));
         }
     }
     /// Contains enemy if the specified position is occupied by a piece owned
@@ -392,8 +435,8 @@ impl Game {
     pub fn contains_enemy(&self, pos: (i32, i32)) -> bool {
         let (x, y) = pos;
         if x > -1 && y > -1 && x - 1 < 7 && y - 1 < 7 {
-            match &self.board.0[y as usize][x as usize] {
-                Some(Piece { player, .. }) => *player != self.turn,
+            match &self.state.board.0[y as usize][x as usize] {
+                Some(Piece { player, .. }) => self.is_enemy(player),
                 _ => false,
             }
         } else {
@@ -405,20 +448,12 @@ impl Game {
     pub fn contains_ally(&self, pos: (i32, i32)) -> bool {
         let (x, y) = pos;
         if x > -1 && y > -1 && x - 1 < 7 && y - 1 < 7 {
-            match &self.board.0[y as usize][x as usize] {
-                Some(Piece { player, .. }) => *player == self.turn,
+            match &self.state.board.0[y as usize][x as usize] {
+                Some(Piece { player, .. }) => *player == self.state.turn,
                 None => false,
             }
         } else {
             false
-        }
-    }
-    /// Coordinate of the first selected piece.
-    fn first_selected(&mut self) -> Option<(i32, i32)> {
-        if self.selected.len() > 0 {
-            Some(self.selected[0].clone())
-        } else {
-            None
         }
     }
     /// Perform castle move if valid.
@@ -429,10 +464,11 @@ impl Game {
     /// - Nothing is in the two spaces between them.
     fn castle_move(&mut self) {
         let moves = self
+            .state
             .selected
             .iter()
             .take(2)
-            .filter_map(|pos| match self.board.get(*pos).cloned() {
+            .filter_map(|pos| match self.state.board.get(*pos).cloned() {
                 Some(piece) => Some((pos, piece)),
                 None => None,
             })
@@ -448,7 +484,7 @@ impl Game {
                     } => (pos.0 - 2, pos.1),
                     _ => return None,
                 };
-                if piece.moved > 0 || self.board.get(projected_move).is_some() {
+                if piece.moved > 0 || self.state.board.get(projected_move).is_some() {
                     None
                 } else {
                     Some((*pos, projected_move))
@@ -457,15 +493,16 @@ impl Game {
             .collect::<Vec<((i32, i32), (i32, i32))>>();
         if moves.len() == 2 {
             for (from, to) in moves {
-                self.board.move_piece(from, to);
+                self.state.board.move_piece(from, to);
             }
+            self.state.selected.clear();
         }
     }
     /// Draw the board which the pieces are placed onto.
     fn draw_board(&self, ctx: &mut Context) -> GameResult<()> {
         let (w, h) = self.cell_size(ctx);
         let mut mb = MeshBuilder::new();
-        for Position { x, y, .. } in self.board.iter() {
+        for Position { x, y, .. } in self.state.board.iter() {
             let (x, y) = (x as i32, y as i32);
             // TODO: get color from color map.
             let color = if x % 2 == 0 && y % 2 == 0 {
@@ -489,7 +526,7 @@ impl Game {
     fn draw_pieces(&self, ctx: &mut Context) -> GameResult<()> {
         let (w, h) = self.cell_size(ctx);
         let size = w.min(h);
-        for Position { x, y, piece } in self.board.iter() {
+        for Position { x, y, piece } in self.state.board.iter() {
             if let Some(Piece { player, unit, .. }) = piece {
                 // Chess pieces are part of unicode.
                 // All we need is a font that provides these.
@@ -510,7 +547,7 @@ impl Game {
                 // Then queue and draw the text immediately, centering the text horizontally.
                 // The fixed offset of -2.0 is required to counteract 1px borders (I think!).
                 // The text must be drawn individually so that we can scale each fragment individually.
-                let fragment: graphics::TextFragment = (text, self.font, size).into();
+                let fragment: graphics::TextFragment = (text, self.state.font, size).into();
                 graphics::queue_text(ctx, &Text::new(fragment), [0.0, 0.0], Some(color));
                 let scale = if h > w {
                     [1.0, h / w]
@@ -535,7 +572,7 @@ impl Game {
     fn draw_highlights(&self, ctx: &mut Context) -> GameResult<()> {
         let mut mb = MeshBuilder::new();
         let (w, h) = self.cell_size(ctx);
-        for (x, y) in self.selected.iter() {
+        for (x, y) in self.state.selected.iter() {
             let (x, y) = (*x as f32, *y as f32);
             mb.rectangle(
                 DrawMode::stroke(2.0),
@@ -558,7 +595,7 @@ impl Game {
         let mut mask = [[Visibility::Fog; 8]; 8];
         let mut mb = MeshBuilder::new();
         let (w, h) = self.cell_size(ctx);
-        for Position { x, y, piece } in self.board.iter() {
+        for Position { x, y, piece } in self.state.board.iter() {
             if let Some(Piece { player, .. }) = piece {
                 if self.is_enemy(player) {
                     continue;
@@ -610,10 +647,7 @@ impl Game {
         Ok(())
     }
     fn is_enemy(&self, player: &Player) -> bool {
-        self.turn != *player
-    }
-    fn is_ally(&self, player: &Player) -> bool {
-        self.turn == *player
+        self.state.turn != *player
     }
     // Calculate cell size based on window size (width, height).
     fn cell_size(&self, ctx: &mut Context) -> (f32, f32) {
@@ -628,13 +662,19 @@ impl Game {
         scale: f32,
         color: Option<Color>,
     ) {
-        let fragment: graphics::TextFragment = (text, self.font, scale).into();
+        let fragment: graphics::TextFragment = (text, self.state.font, scale).into();
         graphics::queue_text(
             ctx,
             &Text::new(fragment),
             [coord.0, coord.1],
             color.or(Some(graphics::BLACK)),
         );
+    }
+    // Translate pixel coordinates to grid cells.
+    fn pixels_to_grid(&self, ctx: &mut Context, coord: (f32, f32)) -> (i32, i32) {
+        let (x, y) = coord;
+        let (w, h) = self.cell_size(ctx);
+        ((x / w).floor() as i32, (y / h).floor() as i32)
     }
 }
 
