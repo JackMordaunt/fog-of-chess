@@ -1,5 +1,3 @@
-#![windows_subsystem = "windows"]
-
 use clap::{App, Arg, SubCommand};
 use derive_builder::*;
 use ggez::event::{self, EventHandler};
@@ -86,17 +84,14 @@ fn main() {
         .debug_stats(app.is_present("debug-stats"))
         .build()
         .expect("building game object");
-    match event::run(
-        &mut ctx,
-        &mut event_loop,
-        &mut Game {
+    event::run(
+        ctx,
+        event_loop,
+        Game {
             state: state.clone(),
             initial: state.clone(),
         },
-    ) {
-        Ok(_) => {}
-        Err(e) => println!("error: {}", e),
-    }
+    )
 }
 
 impl EventHandler for Game {
@@ -539,8 +534,8 @@ impl Game {
                     Unit::Rook => '\u{265C}',
                 };
                 let color = match player {
-                    Player::White => graphics::WHITE,
-                    Player::Black => graphics::BLACK,
+                    Player::White => graphics::Color::WHITE,
+                    Player::Black => graphics::Color::BLACK,
                 };
                 // In order to center the pieces there are a few tricks to do.
                 // First, scale the text by the larger side to "fill out" the space.
@@ -618,7 +613,7 @@ impl Game {
                     mb.rectangle(
                         graphics::DrawMode::fill(),
                         graphics::Rect::new(x * w, y * h, w, h),
-                        graphics::BLACK,
+                        graphics::Color::BLACK,
                     );
                 }
             }
@@ -667,7 +662,7 @@ impl Game {
             ctx,
             &Text::new(fragment),
             [coord.0, coord.1],
-            color.or(Some(graphics::BLACK)),
+            color.or(Some(graphics::Color::BLACK)),
         );
     }
     // Translate pixel coordinates to grid cells.
